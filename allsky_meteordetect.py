@@ -25,7 +25,7 @@ import cv2
 import numpy as np
 
 metaData = {
-    "name": "Meteor Detection (temporal)",
+    "name": "Meteor Detection",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
     "version": "v0.1.0",
     "events": [
