@@ -329,18 +329,19 @@ def meteordetect(params, event):
         s.setEnvironmentVariable("AS_METEORCOUNT", "Disabled (rain)")
         return "Raining - meteor detection skipped"
 
-    min_len = s.int(params["min_length"])
-    diff_thr = s.int(params["diff_thr"])
-    min_elong = s.asfloat(params["min_elong"])
-    max_area = s.int(params["max_area"])
-    cloud_frac = s.asfloat(params["cloud_frac"]) / 100.0
-    feather = params["edge_feather"]
-    sat_filter = params["satellite_filter"]
-    scint_guard = params["scint_guard"]
-    scint_max = s.int(params["scint_max"])
-    upload_remote = params["upload_remote"]
-    save_debug = params["save_debug"]
-    debug = params["debug"]
+    min_len = s.int(params.get("min_length", 40))
+    diff_thr = s.int(params.get("diff_thr", 22))
+    min_elong = s.asfloat(params.get("min_elong", 4.0))
+    max_area = s.int(params.get("max_area", 6000))
+    cloud_frac = s.asfloat(params.get("cloud_frac", 2.0)) / 100.0
+    feather = params.get("edge_feather", 35)
+    # .get() with defaults so a config saved before these options existed still runs
+    sat_filter = params.get("satellite_filter", True)
+    scint_guard = params.get("scint_guard", True)
+    scint_max = s.int(params.get("scint_max", 8))
+    upload_remote = params.get("upload_remote", True)
+    save_debug = params.get("save_debug", False)
+    debug = params.get("debug", False)
 
     outdir = params["outputdir"].strip()
     if not outdir:
