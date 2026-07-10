@@ -112,13 +112,37 @@ thin — raise *Min Streak Length* / *Min Elongation* if a clear night still pro
 false positives), the scintillation guard, and same-location confirmation. There is
 no single perfect filter; tune the geometry to your sky.
 
+## Fisheye calibration & geometric radiant matching (optional)
+
+With a calibrated fisheye projection the module can attribute each meteor to the
+**shower whose radiant its streak actually points back to** — real geometry, not
+just "which showers are active tonight".
+
+`tools/calibrate_fisheye.py` fits the camera model (optical centre, radial
+distortion, rotation, handedness) from a plate-solved night frame: bright stars are
+detected, their true alt/az computed (Hipparcos + sidereal time), matched and
+least-squares fitted. Blind matching is unreliable on a rich Milky-Way sky, so the
+robust path is to **plate-solve a small zenith crop with astrometry.net** (which is
+robust to star density) and bootstrap the full-frame fit from it. The result is a
+`calibration.json` (verified here to **0.11° RMS over 228 stars**).
+
+`allsky_fisheye.py` then provides `pixel_to_altaz` / `altaz_to_pixel` and
+`match_radiant`: a meteor travels along a great circle whose backward extension
+passes through its radiant, so the module tests which active shower's radiant lies
+on that circle (and above the horizon).
+
+Drop `allsky_fisheye.py` + `calibration.json` next to the module; if either is
+missing, radiant matching is silently skipped. **The calibration is per-camera** —
+regenerate it for your own site with `tools/calibrate_fisheye.py`.
+
 ## Output
 
 - **`meteors-<timestamp>.jpg`** in the website `meteors/` folder, plus a thumbnail
   in `meteors/thumbnails/` — picked up automatically by Allsky's meteor gallery
   page. **The gallery image keeps the meteor's true colours, untouched.**
-- **`meteors.json`** — a rolling log of `{time, file, length, angle, elong}` for
-  later statistics.
+- **`meteors.json`** — a rolling log of
+  `{time, file, length, angle, elong, peak, showers, radiant}` for later statistics
+  (`showers` = active by date, `radiant` = geometric attribution if calibrated).
 - Optional remote-website upload of each hit.
 
 ### Why true colour matters
@@ -137,7 +161,8 @@ it.
 - [ ] **Time-series dashboard charts** (SQM, star count, temperature) in the style
       of indi-allsky's `webui_chart01`, fed from a rolling `chart.json` and drawn
       with Chart.js — no backend required.
-- [ ] Meteor-shower radiant awareness (Perseids, Geminids, …).
+- [x] Meteor-shower radiant awareness (Perseids, Geminids, …) — date-based context
+      **and** geometric radiant matching via a plate-solved fisheye calibration.
 - [ ] Optional pull request to `AllskyTeam/allsky-modules`.
 
 ## Credits & inspiration

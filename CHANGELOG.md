@@ -31,5 +31,10 @@ Initial release.
 
 - Record meteor peak brightness (peak new-light intensity) per detection.
 - Date-based meteor-shower context: each detection is tagged with the showers
-  active on that date (Perseids, Geminids, …) or flagged sporadic. Geometric
-  radiant matching is left for later (needs a calibrated fisheye projection).
+  active on that date (Perseids, Geminids, …) or flagged sporadic.
+- **Geometric radiant matching** (optional): `tools/calibrate_fisheye.py` fits the
+  fisheye projection from a plate-solved night frame (astrometry.net-bootstrapped;
+  verified to 0.11° RMS over 228 stars), `allsky_fisheye.py` provides
+  pixel↔alt/az + `match_radiant`, and each meteor is attributed to the shower whose
+  radiant lies on its great circle. Silently skipped if `allsky_fisheye.py` /
+  `calibration.json` are absent. The calibration is per-camera.

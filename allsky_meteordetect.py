@@ -27,7 +27,7 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.1.0",
+    "version": "v0.2.0",
     "events": [
         "night"
     ],
@@ -144,6 +144,16 @@ metaData = {
                 "authorurl": "https://astronomy.garden",
                 "changes": "Initial temporal detector (frame diff + PCA streaks + neighbour-frame classification)"
             }
+        ],
+        "v0.2.0": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Record meteor peak brightness + date-based active-shower context",
+                    "Optional geometric radiant matching via a plate-solved fisheye calibration (allsky_fisheye.py + calibration.json) — attributes each meteor to the shower whose radiant lies on its great circle"
+                ]
+            }
         ]
     }
 }
@@ -176,6 +186,41 @@ def _activeShowers(stamp):
         if (a <= val <= b) if a <= b else (val >= a or val <= b):
             out.append((zhr, name))
     return [n for _, n in sorted(out, reverse=True)]
+
+
+# --- optional geometric radiant matching (needs allsky_fisheye + calibration.json) ---
+_calibCache = {"done": False, "mod": None, "calib": None}
+
+
+def _loadCalib():
+    """Lazy-load the fisheye calibration + projection library (both optional)."""
+    if not _calibCache["done"]:
+        _calibCache["done"] = True
+        try:
+            import allsky_fisheye as fe
+            p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")
+            _calibCache["calib"] = fe.load_calibration(p)
+            _calibCache["mod"] = fe
+            s.log(4, "INFO: meteordetect geometric radiant matching enabled")
+        except Exception as ex:
+            s.log(1, f"INFO: meteordetect radiant matching disabled ({ex})")
+    return _calibCache["mod"], _calibCache["calib"]
+
+
+def _matchRadiant(p1, p2, showers):
+    """Geometric shower attribution for a streak (pixel endpoints), or None.
+    Uses current UTC (detection is near-real-time, so it matches the frame time)."""
+    mod, calib = _loadCalib()
+    if not mod or not calib or not showers:
+        return None
+    try:
+        g = time.gmtime()
+        u = (g.tm_year, g.tm_mon, g.tm_mday, g.tm_hour, g.tm_min, g.tm_sec)
+        name, _sep = mod.match_radiant(p1, p2, calib, u, showers)
+        return name
+    except Exception as ex:
+        s.log(1, f"WARNING: meteordetect radiant match failed: {ex}")
+        return None
 
 
 # --- persistent state between frames (module stays loaded in the postprocess service) ---
@@ -318,10 +363,11 @@ def _saveMeteor(img_path, stamp, streaks, outdir, thumbdir, save_debug):
         log = []
     showers = _activeShowers(stamp)
     for m in streaks:
+        radiant = _matchRadiant(m["p1"], m["p2"], showers)   # geometric attribution
         log.append({"time": stamp, "file": fname,
                     "length": round(m["len"], 1), "angle": round(m["ang"], 1),
                     "elong": round(m["elong"], 1), "peak": m.get("peak"),
-                    "showers": showers})
+                    "showers": showers, "radiant": radiant})
     try:
         json.dump(log[-2000:], open(logpath, "w"))
     except Exception as ex:
