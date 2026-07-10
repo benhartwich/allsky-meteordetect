@@ -93,15 +93,24 @@ fail because tree interiors are smooth and averaging washes out their texture.
 | Setting | Default | Meaning |
 |---|---|---|
 | Detection Mask | `meteor_mask.png` | White = sky to analyse, black = ignore |
-| Min Streak Length | `25` px | Minimum streak length |
+| Min Streak Length | `40` px | Minimum streak length — the main lever against short star artifacts |
 | Difference Threshold | `22` | Brightness increase over previous frame to count as “new” |
-| Min Elongation | `3.0` | Length/width ratio (rejects blobs/clouds) |
+| Min Elongation | `4.0` | Length/width ratio (rejects round star blobs and clouds) |
 | Max Streak Area | `6000` px | Larger regions = cloud brightening |
 | Cloud Skip | `2.0` % | Skip frame if more than this share of sky changed |
 | Mask Edge Feather | `35` px | Soft mask fade so the edge is not detected |
 | Reject Satellites/Aircraft | on | Discard progressing tracks |
+| Scintillation Guard | on | On very clear nights, if a frame has more than *Scintillation Max* streaks keep only a clearly dominant one |
+| Scintillation Max | `8` | Streak count that marks a scintillation-dominated frame |
 | Upload to Remote Website | on | Upload each hit via Allsky's `upload.sh` |
 | Save Marked Copy | off | Extra copy with brackets *around* the streak |
+
+**Clear nights are the hard case.** Star scintillation and slight frame shake make
+bright stars flicker into short streaks that share a meteor's appear-then-disappear
+signature. The defenses are, in order of impact: geometry (a real meteor is long and
+thin — raise *Min Streak Length* / *Min Elongation* if a clear night still produces
+false positives), the scintillation guard, and same-location confirmation. There is
+no single perfect filter; tune the geometry to your sky.
 
 ## Output
 

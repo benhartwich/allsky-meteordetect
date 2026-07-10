@@ -35,9 +35,9 @@ metaData = {
     "module": "allsky_meteordetect",
     "arguments": {
         "mask": "meteor_mask.png",
-        "min_length": "25",
+        "min_length": "40",
         "diff_thr": "22",
-        "min_elong": "3.0",
+        "min_elong": "4.0",
         "max_area": "6000",
         "cloud_frac": "2.0",
         "edge_feather": "35",
@@ -406,15 +406,21 @@ def meteordetect(params, event):
     saved, moving = 0, 0
 
     # --- 1) resolve last frame's pending candidates ---
-    # A candidate is a meteor only if the CURRENT frame shows no progressing continuation.
+    # A real meteor is present in exactly one frame, so it shows up in TWO consecutive
+    # difference images at the SAME location (its appearance, then its disappearance).
+    # We therefore confirm a candidate only if the current frame repeats it at the same
+    # spot AND it is not a progressing (moving) track. Star scintillation flickers at
+    # random positions and never repeats in place, so it is rejected here.
     for entry in pending:
         keep = []
         for cand in entry["streaks"]:
             moved = sat_filter and any(_progressing(cur, cand) for cur in streaks)
+            reappears = any(_similar(cur, cand) for cur in streaks)
             if moved:
                 moving += 1
-            else:
+            elif reappears:
                 keep.append(cand)
+            # else: no same-location disappearance -> flicker/scintillation -> discard
         if keep:
             n = _saveMeteor(entry["img_path"], entry["stamp"], keep,
                             outdir, thumbdir, save_debug)
