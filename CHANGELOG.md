@@ -26,3 +26,10 @@ Initial release.
   against short star-scintillation artifacts on clear nights.
 - Scintillation guard for dense clear-night frames.
 - Document that clear nights are the hard case and geometry is the primary defense.
+
+## v0.2.0
+
+- Record meteor peak brightness (peak new-light intensity) per detection.
+- Date-based meteor-shower context: each detection is tagged with the showers
+  active on that date (Perseids, Geminids, …) or flagged sporadic. Geometric
+  radiant matching is left for later (needs a calibrated fisheye projection).

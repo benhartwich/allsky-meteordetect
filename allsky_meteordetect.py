@@ -148,6 +148,36 @@ metaData = {
     }
 }
 
+# Major annual meteor showers: name, (start m,d), (end m,d), peak ZHR. Used for
+# date-based shower context (which showers are active) — not geometric radiant matching,
+# which would need a calibrated fisheye projection.
+SHOWERS = [
+    ("Quadrantids",     (12, 28), (1, 12), 110),
+    ("Lyrids",          (4, 16),  (4, 25), 18),
+    ("Eta Aquariids",   (4, 19),  (5, 28), 50),
+    ("Delta Aquariids", (7, 12),  (8, 23), 25),
+    ("Perseids",        (7, 17),  (8, 24), 100),
+    ("Orionids",        (10, 2),  (11, 7), 20),
+    ("Leonids",         (11, 6),  (11, 30), 15),
+    ("Geminids",        (12, 4),  (12, 17), 150),
+    ("Ursids",          (12, 17), (12, 26), 10),
+]
+
+
+def _activeShowers(stamp):
+    """Showers active on the given YYYYMMDDHHMMSS date, brightest first."""
+    try:
+        val = int(stamp[4:6]) * 100 + int(stamp[6:8])
+    except Exception:
+        return []
+    out = []
+    for name, (m1, d1), (m2, d2), zhr in SHOWERS:
+        a, b = m1 * 100 + d1, m2 * 100 + d2
+        if (a <= val <= b) if a <= b else (val >= a or val <= b):
+            out.append((zhr, name))
+    return [n for _, n in sorted(out, reverse=True)]
+
+
 # --- persistent state between frames (module stays loaded in the postprocess service) ---
 _maskCache = {"name": None, "soft": None, "hard": None}
 STATE_FILE = os.path.join(s.ALLSKY_TMP, "allsky_meteordetect_state.json")
@@ -203,12 +233,13 @@ def _findStreaks(diff, min_len, min_elong, max_area, diff_thr):
         cx, cy = float(mean[0, 0]), float(mean[0, 1])
         dx, dy = float(evec[0][0]), float(evec[0][1])
         ang = float(np.degrees(np.arctan2(dy, dx)) % 180)
+        peak = int(diff[ys, xs].max())        # brightness = peak new-light intensity
         # cast everything to native python floats so the state stays JSON-serialisable
         out.append({
             "cx": cx, "cy": cy, "len": float(l_major), "elong": float(elong), "ang": ang,
             "p1": [cx - dx * l_major / 2, cy - dy * l_major / 2],
             "p2": [cx + dx * l_major / 2, cy + dy * l_major / 2],
-            "area": int(area)
+            "area": int(area), "peak": peak
         })
     return out
 
@@ -285,10 +316,12 @@ def _saveMeteor(img_path, stamp, streaks, outdir, thumbdir, save_debug):
         log = json.load(open(logpath)) if os.path.exists(logpath) else []
     except Exception:
         log = []
+    showers = _activeShowers(stamp)
     for m in streaks:
         log.append({"time": stamp, "file": fname,
                     "length": round(m["len"], 1), "angle": round(m["ang"], 1),
-                    "elong": round(m["elong"], 1)})
+                    "elong": round(m["elong"], 1), "peak": m.get("peak"),
+                    "showers": showers})
     try:
         json.dump(log[-2000:], open(logpath, "w"))
     except Exception as ex:
