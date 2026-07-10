@@ -314,7 +314,7 @@ def _uploadRemote(outdir, thumbdir, fname):
             (os.path.join(thumbdir, fname), remote_dir + "/thumbnails", "MeteorThumb"),
         ):
             if os.path.isfile(local):
-                subprocess.Popen([uploader, "--silent", "--remote-web", local, rdir, fname, tag],
+                subprocess.Popen([uploader, "--silent", "--wait", "--remote-web", local, rdir, fname, tag],
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as ex:
         s.log(1, f"WARNING: meteordetect remote upload failed: {ex}")
