@@ -379,7 +379,7 @@ def _uploadRemote(outdir, thumbdir, fname):
     """Upload a saved meteor image + thumbnail to the remote website via Allsky's upload.sh.
     Mirrors how keograms are uploaded. Never raises."""
     try:
-        if s.getSetting("useremotewebsite") != "true":
+        if str(s.getSetting("useremotewebsite")).lower() not in ("true", "1", "yes", "on"):
             return
         scripts = s.getEnvironmentVariable("ALLSKY_SCRIPTS") or \
             os.path.join(s.getEnvironmentVariable("ALLSKY_HOME") or os.path.expanduser("~/allsky"), "scripts")
@@ -399,6 +399,12 @@ def _uploadRemote(outdir, thumbdir, fname):
         s.log(1, f"WARNING: meteordetect remote upload failed: {ex}")
 
 
+def _truthy(v):
+    """Checkbox args arrive from the flow config as the STRING 'true'/'false';
+    'false' is truthy in Python, so parse booleans explicitly."""
+    return v is True or (not isinstance(v, bool) and str(v).strip().lower() in ("true", "1", "yes", "on"))
+
+
 def meteordetect(params, event):
     if s.image is None:
         return "No image available"
@@ -415,12 +421,12 @@ def meteordetect(params, event):
     cloud_frac = s.asfloat(params.get("cloud_frac", 2.0)) / 100.0
     feather = params.get("edge_feather", 35)
     # .get() with defaults so a config saved before these options existed still runs
-    sat_filter = params.get("satellite_filter", True)
-    scint_guard = params.get("scint_guard", True)
+    sat_filter = _truthy(params.get("satellite_filter", True))
+    scint_guard = _truthy(params.get("scint_guard", True))
     scint_max = s.int(params.get("scint_max", 8))
-    upload_remote = params.get("upload_remote", True)
-    save_debug = params.get("save_debug", False)
-    debug = params.get("debug", False)
+    upload_remote = _truthy(params.get("upload_remote", True))
+    save_debug = _truthy(params.get("save_debug", False))
+    debug = _truthy(params.get("debug", False))
 
     outdir = params["outputdir"].strip()
     if not outdir:
