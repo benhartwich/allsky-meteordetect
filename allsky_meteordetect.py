@@ -42,6 +42,8 @@ metaData = {
         "cloud_frac": "2.0",
         "edge_feather": "35",
         "satellite_filter": "true",
+        "scint_guard": "true",
+        "scint_max": "8",
         "upload_remote": "true",
         "outputdir": "",
         "save_debug": "false",
@@ -95,6 +97,18 @@ metaData = {
             "description": "Reject Satellites/Aircraft",
             "help": "Discard streaks that continue a moving track across consecutive frames",
             "type": {"fieldtype": "checkbox"}
+        },
+        "scint_guard": {
+            "required": "false",
+            "description": "Scintillation Guard",
+            "help": "On very clear nights star twinkling produces many tiny streaks. If a frame has more than 'Scintillation Max' streaks, keep only a clearly dominant one (a real bright meteor) and otherwise skip the frame.",
+            "type": {"fieldtype": "checkbox"}
+        },
+        "scint_max": {
+            "required": "false",
+            "description": "Scintillation Max",
+            "help": "How many streaks in a single frame count as a scintillation-dominated (noisy) frame",
+            "type": {"fieldtype": "spinner", "min": 3, "max": 50, "step": 1}
         },
         "upload_remote": {
             "required": "false",
@@ -322,6 +336,8 @@ def meteordetect(params, event):
     cloud_frac = s.asfloat(params["cloud_frac"]) / 100.0
     feather = params["edge_feather"]
     sat_filter = params["satellite_filter"]
+    scint_guard = params["scint_guard"]
+    scint_max = s.int(params["scint_max"])
     upload_remote = params["upload_remote"]
     save_debug = params["save_debug"]
     debug = params["debug"]
@@ -363,6 +379,26 @@ def meteordetect(params, event):
         return f"Cloudy frame skipped (coverage {coverage*100:.1f}%)"
 
     streaks = _findStreaks(diff_m, min_len, min_elong, max_area, diff_thr)
+
+    # scintillation guard: a clear starry night produces many tiny star-twinkle
+    # streaks. If the frame is that noisy, keep only a clearly dominant streak
+    # (a genuine bright meteor stands well above the noise), else skip the frame.
+    if scint_guard and len(streaks) > scint_max:
+        ordered = sorted(streaks, key=lambda st_: st_["len"], reverse=True)
+        second = ordered[1]["len"] if len(ordered) > 1 else 0.0
+        if ordered[0]["len"] >= 1.6 * second:
+            streaks = [ordered[0]]
+        else:
+            # too noisy to trust: drop pending unconfirmed and skip, like a cloudy frame
+            st = _readState()
+            for entry in st.get("pending", []):
+                _safeRemove(entry["img_path"])
+            st["prev_streaks"] = []
+            st["pending"] = []
+            _writeState(st)
+            s.setEnvironmentVariable("AS_METEORCOUNT", "0")
+            return "Scintillation-dominated frame skipped (clear sky, star twinkle)"
+
     state = _readState()
     prev_streaks = state.get("prev_streaks", [])
     pending = state.get("pending", [])   # candidates from last frame awaiting confirmation
