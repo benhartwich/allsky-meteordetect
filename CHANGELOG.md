@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.1
+
+- Fix: also upload `meteors.json` to the remote website, not just the images and
+  thumbnails. Without the index file the remote gallery and the per-night chart
+  had the pictures but no data, so both stayed empty. The log now rides along on
+  every confirmed hit (remote dir `<remotewebsiteimagedir>/meteors`).
+
 ## v0.1.0
 
 Initial release.

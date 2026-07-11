@@ -27,7 +27,7 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.2.0",
+    "version": "v0.2.1",
     "events": [
         "night"
     ],
@@ -391,6 +391,9 @@ def _uploadRemote(outdir, thumbdir, fname):
         for local, rdir, tag in (
             (os.path.join(outdir, fname), remote_dir, "Meteor"),
             (os.path.join(thumbdir, fname), remote_dir + "/thumbnails", "MeteorThumb"),
+            # the index that drives the chart + gallery — without it the remote
+            # page has the images but no data, so both stay empty
+            (os.path.join(outdir, "meteors.json"), remote_dir, "MeteorLog"),
         ):
             if os.path.isfile(local):
                 subprocess.Popen([uploader, "--silent", "--wait", "--remote-web", local, rdir, fname, tag],
