@@ -102,6 +102,10 @@ fail because tree interiors are smooth and averaging washes out their texture.
 | Reject Satellites/Aircraft | on | Discard progressing tracks |
 | Scintillation Guard | on | On very clear nights, if a frame has more than *Scintillation Max* streaks keep only a clearly dominant one |
 | Scintillation Max | `8` | Streak count that marks a scintillation-dominated frame |
+| Reject Recurring Positions | on | Reject a spot that keeps firing across frames (scintillation/bloom/trailed star/reflection); a real meteor appears once |
+| Recurrence Frames | `3` | Earlier frames at the same spot (~55 px, ~25 min) needed to call it recurring — keep ≥3 |
+| Reject Star-Trail Orientation | on | Reject a streak parallel to the local diurnal star-trail direction (needs the fisheye calibration); fireballs >130 px exempt |
+| Star-Trail Tolerance | `12`° | How close to the trail direction counts as a trailed star |
 | Upload to Remote Website | on | Upload each hit via Allsky's `upload.sh` |
 | Save Marked Copy | off | Extra copy with brackets *around* the streak |
 

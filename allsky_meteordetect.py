@@ -27,7 +27,7 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.2.1",
+    "version": "v0.3.0",
     "events": [
         "night"
     ],
@@ -44,6 +44,10 @@ metaData = {
         "satellite_filter": "true",
         "scint_guard": "true",
         "scint_max": "8",
+        "repeat_filter": "true",
+        "repeat_k": "3",
+        "trail_filter": "true",
+        "trail_tol": "12",
         "upload_remote": "true",
         "outputdir": "",
         "save_debug": "false",
@@ -110,6 +114,30 @@ metaData = {
             "help": "How many streaks in a single frame count as a scintillation-dominated (noisy) frame",
             "type": {"fieldtype": "spinner", "min": 3, "max": 50, "step": 1}
         },
+        "repeat_filter": {
+            "required": "false",
+            "description": "Reject Recurring Positions",
+            "help": "Reject a streak whose position keeps producing detections across several frames (scintillation, bloom, a trailed star, a fixed reflection). A real meteor appears once, so it is never caught by this.",
+            "type": {"fieldtype": "checkbox"}
+        },
+        "repeat_k": {
+            "required": "false",
+            "description": "Recurrence Frames",
+            "help": "How many earlier frames must show a detection at the same spot (within ~55 px, last ~25 min) for it to count as a recurring artifact. A meteor gives at most 2, so keep this at 3 or higher.",
+            "type": {"fieldtype": "spinner", "min": 2, "max": 10, "step": 1}
+        },
+        "trail_filter": {
+            "required": "false",
+            "description": "Reject Star-Trail Orientation",
+            "help": "Reject a streak whose orientation matches the local diurnal star-trail direction (computed from the fisheye calibration). Long/bright fireballs are exempt. Needs allsky_fisheye.py + calibration.json; silently skipped otherwise.",
+            "type": {"fieldtype": "checkbox"}
+        },
+        "trail_tol": {
+            "required": "false",
+            "description": "Star-Trail Tolerance (deg)",
+            "help": "How close a streak's angle must be to the local star-trail direction to be rejected. Larger = stricter (rejects more), but risks discarding a real meteor that happens to run parallel to the star trails.",
+            "type": {"fieldtype": "spinner", "min": 4, "max": 30, "step": 1}
+        },
         "upload_remote": {
             "required": "false",
             "description": "Upload to Remote Website",
@@ -152,6 +180,17 @@ metaData = {
                 "changes": [
                     "Record meteor peak brightness + date-based active-shower context",
                     "Optional geometric radiant matching via a plate-solved fisheye calibration (allsky_fisheye.py + calibration.json) — attributes each meteor to the shower whose radiant lies on its great circle"
+                ]
+            }
+        ],
+        "v0.3.0": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Recurrence veto: reject a streak whose position keeps firing across several frames (scintillation / bloom / trailed star / fixed reflection). A real meteor appears once, so it is never affected.",
+                    "Star-trail veto: reject a streak whose orientation matches the local diurnal star-trail tangent (from the fisheye calibration); long/bright fireballs are exempt.",
+                    "Log streak geometry (centroid + endpoints) with each confirmed meteor, and write a rolling meteors_vetoed.json of rejected streaks + reason for tuning/validation."
                 ]
             }
         ]
@@ -221,6 +260,56 @@ def _matchRadiant(p1, p2, showers):
     except Exception as ex:
         s.log(1, f"WARNING: meteordetect radiant match failed: {ex}")
         return None
+
+
+# --- star-trail orientation veto (needs the fisheye calibration) ---
+_SIDEREAL_DEG_PER_S = 15.041 / 3600.0
+
+def _trailAngleAt(cx, cy):
+    """Local diurnal star-trail tangent orientation at pixel (cx,cy), in image
+    degrees [0,180), or None if the calibration is unavailable / point is below
+    the horizon. A streak parallel to this is a trailed star, not a meteor.
+
+    The exposure length does not matter for the *direction*: we rotate the star's
+    sky vector by a small fixed angle about the celestial pole and read off the
+    resulting pixel displacement, which is the tangent to its diurnal circle.
+    """
+    mod, calib = _loadCalib()
+    if not mod or not calib:
+        return None
+    try:
+        alt, az = mod.pixel_to_altaz(cx, cy, calib)
+        if alt <= 0.5:
+            return None
+        v = mod._unit(alt, az)
+        P = mod._unit(calib["lat"], 0.0)                 # celestial pole direction
+        P = P / (np.linalg.norm(P) + 1e-12)
+        th = np.radians(_SIDEREAL_DEG_PER_S * 60.0)      # 60 s of rotation → tangent
+        v2 = (v * np.cos(th) + np.cross(P, v) * np.sin(th) + P * float(np.dot(P, v)) * (1 - np.cos(th)))
+        alt2 = np.degrees(np.arcsin(max(-1.0, min(1.0, float(v2[2])))))
+        az2 = np.degrees(np.arctan2(float(v2[0]), float(v2[1]))) % 360.0
+        x1, y1 = mod.altaz_to_pixel(alt, az, calib)
+        x2, y2 = mod.altaz_to_pixel(alt2, az2, calib)
+        return float(np.degrees(np.arctan2(y2 - y1, x2 - x1)) % 180.0)
+    except Exception:
+        return None
+
+
+def _logVetoed(outdir, stamp, cand, reason, detail):
+    """Append a rejected streak to a rolling meteors_vetoed.json for tuning/validation."""
+    try:
+        path = os.path.join(outdir, "meteors_vetoed.json")
+        try:
+            log = json.load(open(path)) if os.path.exists(path) else []
+        except Exception:
+            log = []
+        log.append({"time": stamp, "reason": reason, "detail": round(float(detail), 1),
+                    "cx": round(cand["cx"], 1), "cy": round(cand["cy"], 1),
+                    "len": round(cand["len"], 1), "elong": round(cand["elong"], 1),
+                    "ang": round(cand["ang"], 1), "peak": cand.get("peak")})
+        json.dump(log[-500:], open(path, "w"), default=float)
+    except Exception:
+        pass
 
 
 # --- persistent state between frames (module stays loaded in the postprocess service) ---
@@ -367,6 +456,9 @@ def _saveMeteor(img_path, stamp, streaks, outdir, thumbdir, save_debug):
         log.append({"time": stamp, "file": fname,
                     "length": round(m["len"], 1), "angle": round(m["ang"], 1),
                     "elong": round(m["elong"], 1), "peak": m.get("peak"),
+                    "cx": round(m["cx"], 1), "cy": round(m["cy"], 1),
+                    "p1": [round(m["p1"][0], 1), round(m["p1"][1], 1)],
+                    "p2": [round(m["p2"][0], 1), round(m["p2"][1], 1)],
                     "showers": showers, "radiant": radiant})
     try:
         json.dump(log[-2000:], open(logpath, "w"))
@@ -427,6 +519,10 @@ def meteordetect(params, event):
     sat_filter = _truthy(params.get("satellite_filter", True))
     scint_guard = _truthy(params.get("scint_guard", True))
     scint_max = s.int(params.get("scint_max", 8))
+    repeat_filter = _truthy(params.get("repeat_filter", True))
+    repeat_k = s.int(params.get("repeat_k", 3))
+    trail_filter = _truthy(params.get("trail_filter", True))
+    trail_tol = s.asfloat(params.get("trail_tol", 12.0))
     upload_remote = _truthy(params.get("upload_remote", True))
     save_debug = _truthy(params.get("save_debug", False))
     debug = _truthy(params.get("debug", False))
@@ -492,24 +588,46 @@ def meteordetect(params, event):
     prev_streaks = state.get("prev_streaks", [])
     pending = state.get("pending", [])   # candidates from last frame awaiting confirmation
 
-    saved, moving = 0, 0
+    # rolling "hot spot" memory for the recurrence veto: [cx, cy, t] of every streak
+    # from earlier frames. A trailed star / scintillation / bloom / fixed reflection
+    # keeps firing near the same spot; a real meteor appears exactly once, so it can
+    # never accumulate here and is never vetoed by recurrence.
+    REPEAT_RADIUS, REPEAT_WINDOW_S = 55.0, 1500.0
+    now_t = time.time()
+    hotspots = [h for h in state.get("hotspots", []) if now_t - h[2] <= REPEAT_WINDOW_S]
+
+    def _recurrence(cand):
+        r2 = REPEAT_RADIUS ** 2
+        return sum(1 for h in hotspots
+                   if (h[0] - cand["cx"]) ** 2 + (h[1] - cand["cy"]) ** 2 <= r2)
+
+    saved, moving, vetoed = 0, 0, 0
 
     # --- 1) resolve last frame's pending candidates ---
     # A real meteor is present in exactly one frame, so it shows up in TWO consecutive
     # difference images at the SAME location (its appearance, then its disappearance).
-    # We therefore confirm a candidate only if the current frame repeats it at the same
-    # spot AND it is not a progressing (moving) track. Star scintillation flickers at
-    # random positions and never repeats in place, so it is rejected here.
+    # We confirm a candidate only if the current frame repeats it at the same spot AND
+    # it is not a moving track, a recurring position, or aligned with the star trails.
     for entry in pending:
         keep = []
         for cand in entry["streaks"]:
-            moved = sat_filter and any(_progressing(cur, cand) for cur in streaks)
-            reappears = any(_similar(cur, cand) for cur in streaks)
-            if moved:
+            if sat_filter and any(_progressing(cur, cand) for cur in streaks):
                 moving += 1
-            elif reappears:
-                keep.append(cand)
-            # else: no same-location disappearance -> flicker/scintillation -> discard
+                continue
+            if not any(_similar(cur, cand) for cur in streaks):
+                continue  # no same-location disappearance -> flicker -> discard
+            rec = _recurrence(cand) if repeat_filter else 0
+            if repeat_filter and rec >= repeat_k:
+                vetoed += 1
+                _logVetoed(outdir, entry["stamp"], cand, "repeat", rec)
+                continue
+            if trail_filter and cand["len"] <= 130.0:          # long/bright fireballs exempt
+                ta = _trailAngleAt(cand["cx"], cand["cy"])
+                if ta is not None and _angDiff(cand["ang"], ta) <= trail_tol:
+                    vetoed += 1
+                    _logVetoed(outdir, entry["stamp"], cand, "trail", _angDiff(cand["ang"], ta))
+                    continue
+            keep.append(cand)
         if keep:
             n = _saveMeteor(entry["img_path"], entry["stamp"], keep,
                             outdir, thumbdir, save_debug)
@@ -535,14 +653,19 @@ def meteordetect(params, event):
         cv2.imwrite(stash, s.image)          # stash TRUE-COLOUR frame for later save
         new_pending.append({"img_path": stash, "stamp": stamp, "streaks": new_cands})
 
+    # remember this frame's streak positions for the recurrence veto (rolling, pruned)
+    hotspots.extend([round(st_["cx"], 1), round(st_["cy"], 1), now_t] for st_ in streaks)
+    state["hotspots"] = hotspots[-400:]
     state["prev_streaks"] = streaks
     state["pending"] = new_pending
     _writeState(state)
 
     s.setEnvironmentVariable("AS_METEORCOUNT", str(saved))
     s.setEnvironmentVariable("AS_METEORMOVING", str(moving))
+    s.setEnvironmentVariable("AS_METEORVETOED", str(vetoed))
     result = (f"{saved} meteor(s) confirmed, {moving} moving rejected, "
-              f"{len(new_cands)} new candidate(s) pending, {len(streaks)} streak(s) total")
+              f"{vetoed} artifact(s) vetoed, {len(new_cands)} new candidate(s) pending, "
+              f"{len(streaks)} streak(s) total")
     s.log(4, f"INFO: {result}")
     return result
 
@@ -552,7 +675,7 @@ def meteordetect_cleanup():
         "metaData": metaData,
         "cleanup": {
             "files": {STATE_FILE, PREV_FRAME},
-            "env": {"AS_METEORCOUNT", "AS_METEORMOVING"}
+            "env": {"AS_METEORCOUNT", "AS_METEORMOVING", "AS_METEORVETOED"}
         }
     }
     s.cleanupModule(moduleData)

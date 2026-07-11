@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.3.0
+
+Two false-positive vetoes aimed at clear-night artifacts, plus geometry logging
+for validation. Motivated by a clear Milky-Way night where ~30 of 37 "meteors"
+were star scintillation/bloom and a handful were satellites, with only ~1 real.
+
+- **Recurrence veto** (`repeat_filter`, default on): reject a streak whose position
+  keeps producing detections across several frames — scintillation, bloom, a
+  trailed star, a fixed reflection. Tracked in a rolling ~25-min / ~55-px hot-spot
+  memory. A real meteor appears exactly once, so it can never accumulate and is
+  never vetoed by this. `repeat_k` (default 3) sets how many earlier frames at the
+  same spot count as recurring.
+- **Star-trail veto** (`trail_filter`, default on): reject a streak whose
+  orientation matches the local diurnal star-trail tangent, computed from the
+  fisheye calibration (rotate the sky vector about the celestial pole → tangent).
+  Long/bright fireballs (>130 px) are exempt so a real bolide parallel to the
+  trails is never lost. `trail_tol` (default 12°). Silently skipped without
+  `allsky_fisheye.py` / `calibration.json`.
+- Confirmed meteors now log their streak geometry (`cx,cy,p1,p2`), and every
+  rejected streak is appended to a rolling `meteors_vetoed.json` with its reason —
+  so the filters can be checked against a real night before being trusted.
+- New env var `AS_METEORVETOED`.
+
 ## v0.2.1
 
 - Fix: also upload `meteors.json` to the remote website, not just the images and
