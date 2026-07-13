@@ -27,7 +27,7 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.3.0",
+    "version": "v0.4.0",
     "events": [
         "night"
     ],
@@ -35,12 +35,15 @@ metaData = {
     "module": "allsky_meteordetect",
     "arguments": {
         "mask": "meteor_mask.png",
-        "min_length": "40",
+        "min_length": "50",
         "diff_thr": "22",
-        "min_elong": "4.0",
+        "min_elong": "5.0",
         "max_area": "6000",
         "cloud_frac": "2.0",
         "edge_feather": "35",
+        "dash_filter": "true",
+        "dash_runs": "10",
+        "dash_min_len": "120",
         "satellite_filter": "true",
         "scint_guard": "true",
         "scint_max": "8",
@@ -63,7 +66,7 @@ metaData = {
         "min_length": {
             "required": "true",
             "description": "Min Streak Length (px)",
-            "help": "Minimum length of a detected streak in pixels",
+            "help": "Minimum length of a detected streak in pixels. Short compact blobs near the fisheye edge are defocused stars, not meteors; keep this around 50.",
             "type": {"fieldtype": "spinner", "min": 5, "max": 500, "step": 1}
         },
         "diff_thr": {
@@ -75,7 +78,7 @@ metaData = {
         "min_elong": {
             "required": "false",
             "description": "Min Elongation",
-            "help": "Length/width ratio. Low values pass blobs (clouds), high values require a thin streak.",
+            "help": "Length/width ratio. Low values pass blobs (defocused stars, cloud); high values require a thin streak. Real meteors here measured >=7; barely-elongated (~4) detections are defocused stars, so keep this around 5.",
             "type": {"fieldtype": "spinner", "min": 1.5, "max": 10, "step": 0.5}
         },
         "max_area": {
@@ -95,6 +98,24 @@ metaData = {
             "description": "Mask Edge Feather (px)",
             "help": "Soft fade of the mask edge so the mask boundary itself is not detected as a streak",
             "type": {"fieldtype": "spinner", "min": 0, "max": 151, "step": 2}
+        },
+        "dash_filter": {
+            "required": "false",
+            "description": "Reject Dashed Trails",
+            "help": "Reject a long streak that is broken into many bright/dark segments along its length. A meteor is one continuous streak; a tumbling satellite or a strobing aircraft leaves a dashed trail. Catches a single-frame satellite/aircraft that the cross-frame filter cannot see.",
+            "type": {"fieldtype": "checkbox"}
+        },
+        "dash_runs": {
+            "required": "false",
+            "description": "Dash Segments",
+            "help": "How many separate bright segments along a streak's axis mark it as a dashed (satellite/aircraft) trail. A real meteor scores <=5 here; a dashed satellite scored 19. Keep at 10 for a wide safety margin.",
+            "type": {"fieldtype": "spinner", "min": 4, "max": 40, "step": 1}
+        },
+        "dash_min_len": {
+            "required": "false",
+            "description": "Dash Min Length (px)",
+            "help": "Only test streaks at least this long for a dashed pattern. Short streaks are exempt so a genuine short meteor is never dash-vetoed (satellite/aircraft trails are long).",
+            "type": {"fieldtype": "spinner", "min": 40, "max": 500, "step": 10}
         },
         "satellite_filter": {
             "required": "false",
@@ -191,6 +212,16 @@ metaData = {
                     "Recurrence veto: reject a streak whose position keeps firing across several frames (scintillation / bloom / trailed star / fixed reflection). A real meteor appears once, so it is never affected.",
                     "Star-trail veto: reject a streak whose orientation matches the local diurnal star-trail tangent (from the fisheye calibration); long/bright fireballs are exempt.",
                     "Log streak geometry (centroid + endpoints) with each confirmed meteor, and write a rolling meteors_vetoed.json of rejected streaks + reason for tuning/validation."
+                ]
+            }
+        ],
+        "v0.4.0": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Dashed-trail veto: reject a long streak broken into many bright/dark segments along its axis (a tumbling satellite / strobing aircraft). Catches a single-frame satellite pass the cross-frame filter cannot see. Tuned on real data — a dashed satellite scored 19 segments, real meteors <=5.",
+                    "Raise default min elongation 4.0 -> 5.0 and min length 40 -> 50: barely-elongated short blobs near the fisheye edge are defocused stars, not meteors. Validated against a clear night where the two real meteors measured elongation 7-8 while the false positives sat right on the old 4.0/40 floors."
                 ]
             }
         ]
@@ -378,6 +409,44 @@ def _findStreaks(diff, min_len, min_elong, max_area, diff_thr):
     return out
 
 
+def _dashRuns(gray, p1, p2):
+    """Count how many separate bright segments lie along a streak's axis.
+
+    A meteor is a single continuous streak (1 run, sometimes 2 if it tapers);
+    a tumbling satellite or a strobing aircraft leaves a DASHED trail — many
+    bright/dark alternations. Sampling the intensity along the axis (with a
+    small perpendicular max so a slight axis mis-fit still lands on the streak),
+    then counting rising edges above a level set relative to the streak's own
+    peak, gives a clean separator: on this camera a real meteor scores <=5 and
+    a dashed satellite scored 19. Validated on the 2026-07-13 detections."""
+    p1 = np.asarray(p1, float); p2 = np.asarray(p2, float)
+    L = float(np.hypot(*(p2 - p1)))
+    if L < 1.0:
+        return 0
+    n = max(8, int(L))
+    d = (p2 - p1) / L
+    perp = np.array([-d[1], d[0]])
+    h, w = gray.shape
+    vals = np.zeros(n + 1, np.float32)
+    for i in range(n + 1):
+        pt = p1 + d * (L * i / n)
+        m = 0.0
+        for o in (-3, -2, -1, 0, 1, 2, 3):     # perpendicular window, robust to mis-fit
+            q = pt + perp * o
+            x = int(round(q[0])); y = int(round(q[1]))
+            if 0 <= x < w and 0 <= y < h:
+                v = float(gray[y, x])
+                if v > m:
+                    m = v
+        vals[i] = m
+    bg = float(np.percentile(vals, 10)); pk = float(vals.max())
+    if pk - bg < 8.0:                          # no real contrast -> not dashed
+        return 0
+    level = bg + 0.30 * (pk - bg)
+    on = vals >= level
+    return int(np.sum(on[1:] & ~on[:-1])) + (1 if on[0] else 0)
+
+
 def _angDiff(a, b):
     return min(abs(a - b), 180 - abs(a - b))
 
@@ -509,13 +578,16 @@ def meteordetect(params, event):
         s.setEnvironmentVariable("AS_METEORCOUNT", "Disabled (rain)")
         return "Raining - meteor detection skipped"
 
-    min_len = s.int(params.get("min_length", 40))
+    min_len = s.int(params.get("min_length", 50))
     diff_thr = s.int(params.get("diff_thr", 22))
-    min_elong = s.asfloat(params.get("min_elong", 4.0))
+    min_elong = s.asfloat(params.get("min_elong", 5.0))
     max_area = s.int(params.get("max_area", 6000))
     cloud_frac = s.asfloat(params.get("cloud_frac", 2.0)) / 100.0
     feather = params.get("edge_feather", 35)
     # .get() with defaults so a config saved before these options existed still runs
+    dash_filter = _truthy(params.get("dash_filter", True))
+    dash_runs = s.int(params.get("dash_runs", 10))
+    dash_min_len = s.asfloat(params.get("dash_min_len", 120.0))
     sat_filter = _truthy(params.get("satellite_filter", True))
     scint_guard = _truthy(params.get("scint_guard", True))
     scint_max = s.int(params.get("scint_max", 8))
@@ -564,6 +636,14 @@ def meteordetect(params, event):
         return f"Cloudy frame skipped (coverage {coverage*100:.1f}%)"
 
     streaks = _findStreaks(diff_m, min_len, min_elong, max_area, diff_thr)
+
+    # tag each streak with its dashed-segment count (measured on the true-colour
+    # frame the streak was just captured in) so the dashed-trail veto can run when
+    # the candidate is confirmed one frame later. Cheap; only long streaks matter.
+    if dash_filter:
+        for st_ in streaks:
+            st_["dash_runs"] = (_dashRuns(gray, st_["p1"], st_["p2"])
+                                if st_["len"] >= dash_min_len else 0)
 
     # scintillation guard: a clear starry night produces many tiny star-twinkle
     # streaks. If the frame is that noisy, keep only a clearly dominant streak
@@ -627,6 +707,10 @@ def meteordetect(params, event):
                     vetoed += 1
                     _logVetoed(outdir, entry["stamp"], cand, "trail", _angDiff(cand["ang"], ta))
                     continue
+            if dash_filter and cand["len"] >= dash_min_len and cand.get("dash_runs", 0) >= dash_runs:
+                vetoed += 1
+                _logVetoed(outdir, entry["stamp"], cand, "dashed", cand.get("dash_runs", 0))
+                continue
             keep.append(cand)
         if keep:
             n = _saveMeteor(entry["img_path"], entry["stamp"], keep,

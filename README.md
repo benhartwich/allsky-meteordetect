@@ -93,12 +93,15 @@ fail because tree interiors are smooth and averaging washes out their texture.
 | Setting | Default | Meaning |
 |---|---|---|
 | Detection Mask | `meteor_mask.png` | White = sky to analyse, black = ignore |
-| Min Streak Length | `40` px | Minimum streak length — the main lever against short star artifacts |
+| Min Streak Length | `50` px | Minimum streak length — the main lever against short star artifacts |
 | Difference Threshold | `22` | Brightness increase over previous frame to count as “new” |
-| Min Elongation | `4.0` | Length/width ratio (rejects round star blobs and clouds) |
+| Min Elongation | `5.0` | Length/width ratio (rejects round star blobs and clouds); real meteors here measured ≥7 |
 | Max Streak Area | `6000` px | Larger regions = cloud brightening |
 | Cloud Skip | `2.0` % | Skip frame if more than this share of sky changed |
 | Mask Edge Feather | `35` px | Soft mask fade so the edge is not detected |
+| Reject Dashed Trails | on | Reject a long streak broken into many bright/dark segments — a tumbling satellite or strobing aircraft |
+| Dash Segments | `10` | Segment count that marks a streak as dashed (real meteor ≤5, a dashed satellite scored 19) |
+| Dash Min Length | `120` px | Only test streaks at least this long for a dashed pattern; short meteors are exempt |
 | Reject Satellites/Aircraft | on | Discard progressing tracks |
 | Scintillation Guard | on | On very clear nights, if a frame has more than *Scintillation Max* streaks keep only a clearly dominant one |
 | Scintillation Max | `8` | Streak count that marks a scintillation-dominated frame |

@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.4.0
+
+A dashed-trail veto and tighter shape floors, tuned against a real clear night
+(2026-07-13) whose six detections were one real meteor, one satellite, and four
+edge/compact false positives.
+
+- **Dashed-trail veto** (`dash_filter`, default on): reject a long streak broken
+  into many bright/dark segments along its axis — a tumbling satellite or a
+  strobing aircraft. Intensity is sampled along the streak's principal axis and
+  the separate bright runs are counted; a real meteor scores ≤5, the night's
+  dashed satellite scored 19. Only streaks at least `dash_min_len` (120 px) are
+  tested, so a short genuine meteor is never dash-vetoed. `dash_runs` (default 10)
+  is the segment count that marks a trail as dashed.
+- **Tighter shape floors**: default min elongation 4.0 → 5.0 and min length
+  40 → 50. The real meteors measured elongation 7–8, while the compact false
+  positives were barely-elongated (~4) blobs — defocused stars near the fisheye
+  edge — sitting right on the old floors.
+- Validated end-to-end against the night's detections: the real meteor kept, the
+  satellite and both compact blobs vetoed (5/5 unambiguous cases correct).
+
+### Known limitation
+
+A plane or satellite that crosses within a single exposure is *temporally*
+identical to a meteor — it appears then disappears at one spot — so only its
+shape betrays it. If such a trail is fragmented (by the mask or the frame edge)
+into a single short piece, that piece can still pass the shape filters. On the
+same night a long aircraft trail was logged as one 80-px edge fragment and
+slipped through. Reassembling collinear fragments before the veto is the next
+step.
+
 ## v0.3.0
 
 Two false-positive vetoes aimed at clear-night artifacts, plus geometry logging
