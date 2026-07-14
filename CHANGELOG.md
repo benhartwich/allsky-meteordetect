@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.4.1
+
+Closes the fragmented-trail gap the v0.4.0 "Known limitation" called out —
+shipped in **shadow mode** so it gathers evidence before it is trusted to veto.
+
+- **Fragmented-trail metric** (`frag_filter`, **off / shadow by default**). The
+  v0.4.0 dash veto samples only a streak's *continuous* head, so a satellite
+  glint whose dashed tail is broken into separate sub-threshold pieces slips
+  through as a lone bright head (exactly what happened on 2026-07-13: a 154-px
+  head scored 1 dash-run and was saved as a "meteor"). The new metric counts
+  difference-image components lying **collinear** — within a few pixels of the
+  streak's axis line — *beyond* its endpoints. A real meteor has nothing
+  collinear past its ends (score 0); the validated glint scored 3. It is
+  measured on the **difference** image, where static stars cancel, so a star
+  near the axis is never miscounted as a fragment.
+- **Shadow mode.** With `frag_filter` off, the metric is only *logged* — a
+  `frag-shadow` entry in `meteors_vetoed.json` for anything it would reject, and
+  `frag_n` / `frag_ext` on every saved meteor in `meteors.json` — but nothing is
+  vetoed. Arm it (`frag_filter` on, `frag_min` = 3) only once real meteors have
+  confirmed they score 0, so a genuine meteor is never lost to an unproven
+  filter. `frag_min_len` (120 px) exempts short streaks.
+
 ## v0.4.0
 
 A dashed-trail veto and tighter shape floors, tuned against a real clear night

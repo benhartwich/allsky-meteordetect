@@ -102,6 +102,9 @@ fail because tree interiors are smooth and averaging washes out their texture.
 | Reject Dashed Trails | on | Reject a long streak broken into many bright/dark segments — a tumbling satellite or strobing aircraft |
 | Dash Segments | `10` | Segment count that marks a streak as dashed (real meteor ≤5, a dashed satellite scored 19) |
 | Dash Min Length | `120` px | Only test streaks at least this long for a dashed pattern; short meteors are exempt |
+| Reject Fragmented Trails (arm) | off | Arm the fragmented-trail veto. **Off = shadow mode**: the collinear-fragment metric is measured and logged (`frag_n`/`frag_ext`, `frag-shadow`) but nothing is vetoed. Turn on only after real meteors confirm they score 0 |
+| Fragment Segments | `3` | Collinear diff fragments beyond a streak's ends that mark it as the head of a fragmented dashed trail (real meteor 0, validated glint 3) |
+| Fragment Min Length | `120` px | Only test streaks at least this long for a collinear fragmented tail |
 | Reject Satellites/Aircraft | on | Discard progressing tracks |
 | Scintillation Guard | on | On very clear nights, if a frame has more than *Scintillation Max* streaks keep only a clearly dominant one |
 | Scintillation Max | `8` | Streak count that marks a scintillation-dominated frame |
@@ -148,8 +151,9 @@ regenerate it for your own site with `tools/calibrate_fisheye.py`.
   in `meteors/thumbnails/` — picked up automatically by Allsky's meteor gallery
   page. **The gallery image keeps the meteor's true colours, untouched.**
 - **`meteors.json`** — a rolling log of
-  `{time, file, length, angle, elong, peak, showers, radiant}` for later statistics
-  (`showers` = active by date, `radiant` = geometric attribution if calibrated).
+  `{time, file, length, angle, elong, peak, frag_n, frag_ext, showers, radiant}`
+  for later statistics (`showers` = active by date, `radiant` = geometric
+  attribution if calibrated, `frag_n` = collinear-fragment shadow metric).
 - Optional remote-website upload of each hit.
 
 ### Why true colour matters

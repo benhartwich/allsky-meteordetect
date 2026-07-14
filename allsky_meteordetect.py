@@ -27,7 +27,7 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.4.0",
+    "version": "v0.4.1",
     "events": [
         "night"
     ],
@@ -44,6 +44,9 @@ metaData = {
         "dash_filter": "true",
         "dash_runs": "10",
         "dash_min_len": "120",
+        "frag_filter": "false",
+        "frag_min": "3",
+        "frag_min_len": "120",
         "satellite_filter": "true",
         "scint_guard": "true",
         "scint_max": "8",
@@ -115,6 +118,24 @@ metaData = {
             "required": "false",
             "description": "Dash Min Length (px)",
             "help": "Only test streaks at least this long for a dashed pattern. Short streaks are exempt so a genuine short meteor is never dash-vetoed (satellite/aircraft trails are long).",
+            "type": {"fieldtype": "spinner", "min": 40, "max": 500, "step": 10}
+        },
+        "frag_filter": {
+            "required": "false",
+            "description": "Reject Fragmented Trails (arm)",
+            "help": "Reject a streak that is only the bright head of a longer DASHED trail whose faint segments were split into separate sub-threshold fragments (a satellite glint the dash veto misses because it measures only the continuous head). Counts diff components lying collinear beyond the streak's ends. OFF by default = shadow mode: the metric is measured and logged (frag-shadow in meteors_vetoed.json, frag_n on each saved meteor) but nothing is vetoed. Turn ON only after real meteors have confirmed they score 0.",
+            "type": {"fieldtype": "checkbox"}
+        },
+        "frag_min": {
+            "required": "false",
+            "description": "Fragment Segments",
+            "help": "How many collinear diff fragments beyond a streak's ends mark it as the head of a fragmented dashed trail. A real meteor has nothing collinear beyond it (0); the validated satellite glint scored 3.",
+            "type": {"fieldtype": "spinner", "min": 2, "max": 20, "step": 1}
+        },
+        "frag_min_len": {
+            "required": "false",
+            "description": "Fragment Min Length (px)",
+            "help": "Only test streaks at least this long for a collinear fragmented tail. Short streaks are exempt.",
             "type": {"fieldtype": "spinner", "min": 40, "max": 500, "step": 10}
         },
         "satellite_filter": {
@@ -222,6 +243,16 @@ metaData = {
                 "changes": [
                     "Dashed-trail veto: reject a long streak broken into many bright/dark segments along its axis (a tumbling satellite / strobing aircraft). Catches a single-frame satellite pass the cross-frame filter cannot see. Tuned on real data — a dashed satellite scored 19 segments, real meteors <=5.",
                     "Raise default min elongation 4.0 -> 5.0 and min length 40 -> 50: barely-elongated short blobs near the fisheye edge are defocused stars, not meteors. Validated against a clear night where the two real meteors measured elongation 7-8 while the false positives sat right on the old 4.0/40 floors."
+                ]
+            }
+        ],
+        "v0.4.1": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Fragmented-trail metric (frag_filter, SHADOW by default): the v0.4.0 dash veto measures only a streak's continuous head, so a satellite glint whose dashed tail is split into separate sub-threshold fragments slips through as a lone bright head. This counts difference components lying collinear (small perpendicular residual) beyond the streak's endpoints — a real meteor has none, the validated 2026-07-13 glint scored 3. Measured on the DIFFERENCE image so static stars cancel and cannot be miscounted as fragments.",
+                    "Ships in shadow mode: frag_filter off = the metric is logged (frag-shadow entries in meteors_vetoed.json, frag_n/frag_ext on every saved meteor) but nothing is vetoed. Arm only after real meteors confirm they score 0."
                 ]
             }
         ]
@@ -447,6 +478,42 @@ def _dashRuns(gray, p1, p2):
     return int(np.sum(on[1:] & ~on[:-1])) + (1 if on[0] else 0)
 
 
+def _collinearFragments(diff, cx, cy, ang, length, diff_thr,
+                        perp_tol=8.0, reach_factor=3.0, area_min=6):
+    """Count difference components that lie COLLINEAR with a streak but BEYOND
+    its endpoints — the dashed continuation of a fragmented satellite/aircraft
+    glint whose faint tail was split into separate sub-threshold pieces.
+
+    The v0.4.0 dash veto only samples the streak's own axis (its continuous
+    bright head), so a lone bright head with a broken-up tail passes. This
+    walks every diff component and keeps those whose centroid sits within
+    ``perp_tol`` px of the streak's infinite axis line and past its own extent
+    (|axial| > length/2) out to ``reach_factor``x. A real meteor is a single
+    streak with nothing collinear beyond it -> 0; the validated 2026-07-13
+    satellite glint scored 3. Measured on the DIFFERENCE image so static stars
+    (which cancel there) are never miscounted. Returns (count, max_extent_px)."""
+    a = np.radians(ang)
+    dx, dy = float(np.cos(a)), float(np.sin(a))
+    half = length / 2.0
+    reach = half * reach_factor
+    _, bw = cv2.threshold(diff, diff_thr, 255, cv2.THRESH_BINARY)
+    n, _, stats, cent = cv2.connectedComponentsWithStats(bw, 8)
+    cnt = 0
+    ext = half
+    for i in range(1, n):
+        if stats[i, cv2.CC_STAT_AREA] < area_min:
+            continue
+        px = float(cent[i][0]) - cx
+        py = float(cent[i][1]) - cy
+        axial = px * dx + py * dy            # signed distance along the axis
+        perp = abs(-px * dy + py * dx)       # distance perpendicular to the axis
+        if perp <= perp_tol and half < abs(axial) <= reach:
+            cnt += 1
+            if abs(axial) > ext:
+                ext = abs(axial)
+    return cnt, float(ext)
+
+
 def _angDiff(a, b):
     return min(abs(a - b), 180 - abs(a - b))
 
@@ -528,6 +595,7 @@ def _saveMeteor(img_path, stamp, streaks, outdir, thumbdir, save_debug):
                     "cx": round(m["cx"], 1), "cy": round(m["cy"], 1),
                     "p1": [round(m["p1"][0], 1), round(m["p1"][1], 1)],
                     "p2": [round(m["p2"][0], 1), round(m["p2"][1], 1)],
+                    "frag_n": m.get("frag_n", 0), "frag_ext": round(m.get("frag_ext", 0.0), 1),
                     "showers": showers, "radiant": radiant})
     try:
         json.dump(log[-2000:], open(logpath, "w"))
@@ -588,6 +656,9 @@ def meteordetect(params, event):
     dash_filter = _truthy(params.get("dash_filter", True))
     dash_runs = s.int(params.get("dash_runs", 10))
     dash_min_len = s.asfloat(params.get("dash_min_len", 120.0))
+    frag_filter = _truthy(params.get("frag_filter", False))   # off = shadow (measure + log, no veto)
+    frag_min = s.int(params.get("frag_min", 3))
+    frag_min_len = s.asfloat(params.get("frag_min_len", 120.0))
     sat_filter = _truthy(params.get("satellite_filter", True))
     scint_guard = _truthy(params.get("scint_guard", True))
     scint_max = s.int(params.get("scint_max", 8))
@@ -644,6 +715,17 @@ def meteordetect(params, event):
         for st_ in streaks:
             st_["dash_runs"] = (_dashRuns(gray, st_["p1"], st_["p2"])
                                 if st_["len"] >= dash_min_len else 0)
+
+    # tag each long streak with its collinear-fragment count on the DIFFERENCE
+    # image (static stars cancel there). Measured always so the shadow metric is
+    # gathered even while frag_filter is off; only long streaks are worth testing.
+    for st_ in streaks:
+        if st_["len"] >= frag_min_len:
+            fn, fx = _collinearFragments(diff_m, st_["cx"], st_["cy"],
+                                         st_["ang"], st_["len"], diff_thr)
+            st_["frag_n"], st_["frag_ext"] = fn, fx
+        else:
+            st_["frag_n"], st_["frag_ext"] = 0, st_["len"] / 2.0
 
     # scintillation guard: a clear starry night produces many tiny star-twinkle
     # streaks. If the frame is that noisy, keep only a clearly dominant streak
@@ -711,6 +793,15 @@ def meteordetect(params, event):
                 vetoed += 1
                 _logVetoed(outdir, entry["stamp"], cand, "dashed", cand.get("dash_runs", 0))
                 continue
+            # fragmented-trail check. Armed (frag_filter on) it vetoes; off it is
+            # shadow-only: log a frag-shadow entry for tuning but keep the meteor,
+            # so we learn what it WOULD reject without risking a real meteor yet.
+            if cand["len"] >= frag_min_len and cand.get("frag_n", 0) >= frag_min:
+                if frag_filter:
+                    vetoed += 1
+                    _logVetoed(outdir, entry["stamp"], cand, "fragmented", cand.get("frag_n", 0))
+                    continue
+                _logVetoed(outdir, entry["stamp"], cand, "frag-shadow", cand.get("frag_n", 0))
             keep.append(cand)
         if keep:
             n = _saveMeteor(entry["img_path"], entry["stamp"], keep,
