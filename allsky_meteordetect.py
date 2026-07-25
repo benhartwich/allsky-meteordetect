@@ -27,7 +27,7 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.4.1",
+    "version": "v0.4.2",
     "events": [
         "night"
     ],
@@ -253,6 +253,15 @@ metaData = {
                 "changes": [
                     "Fragmented-trail metric (frag_filter, SHADOW by default): the v0.4.0 dash veto measures only a streak's continuous head, so a satellite glint whose dashed tail is split into separate sub-threshold fragments slips through as a lone bright head. This counts difference components lying collinear (small perpendicular residual) beyond the streak's endpoints — a real meteor has none, the validated 2026-07-13 glint scored 3. Measured on the DIFFERENCE image so static stars cancel and cannot be miscounted as fragments.",
                     "Ships in shadow mode: frag_filter off = the metric is logged (frag-shadow entries in meteors_vetoed.json, frag_n/frag_ext on every saved meteor) but nothing is vetoed. Arm only after real meteors confirm they score 0."
+                ]
+            }
+        ],
+        "v0.4.2": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Fix remote upload of meteors.json: the per-hit upload loop reused the image's filename as the remote destination name for all three files, so the log was uploaded UNDER the image name and the remote meteors.json was never refreshed — the remote gallery and per-night chart stayed frozen on the first night ever detected. Each file now keeps its own remote name (image, thumbnail, meteors.json)."
                 ]
             }
         ]
@@ -617,15 +626,18 @@ def _uploadRemote(outdir, thumbdir, fname):
             return
         base = (s.getSetting("remotewebsiteimagedir") or "").rstrip("/")
         remote_dir = f"{base}/meteors" if base else "meteors"
-        for local, rdir, tag in (
-            (os.path.join(outdir, fname), remote_dir, "Meteor"),
-            (os.path.join(thumbdir, fname), remote_dir + "/thumbnails", "MeteorThumb"),
+        for local, rdir, remote_name, tag in (
+            (os.path.join(outdir, fname), remote_dir, fname, "Meteor"),
+            (os.path.join(thumbdir, fname), remote_dir + "/thumbnails", fname, "MeteorThumb"),
             # the index that drives the chart + gallery — without it the remote
-            # page has the images but no data, so both stay empty
-            (os.path.join(outdir, "meteors.json"), remote_dir, "MeteorLog"),
+            # page has the images but no data, so both stay empty. It MUST keep its
+            # own name on the remote: passing the image's fname here (the old bug)
+            # uploaded the log *under the image name*, so the remote meteors.json
+            # was never refreshed and the gallery/chart stayed frozen on one night.
+            (os.path.join(outdir, "meteors.json"), remote_dir, "meteors.json", "MeteorLog"),
         ):
             if os.path.isfile(local):
-                subprocess.Popen([uploader, "--silent", "--wait", "--remote-web", local, rdir, fname, tag],
+                subprocess.Popen([uploader, "--silent", "--wait", "--remote-web", local, rdir, remote_name, tag],
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as ex:
         s.log(1, f"WARNING: meteordetect remote upload failed: {ex}")

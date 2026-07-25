@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.4.2
+
+Fixes a remote-upload bug that froze the online gallery on a single night.
+
+- **Remote `meteors.json` upload fix.** The per-hit upload loop uploads three
+  files — the meteor image, its thumbnail and the `meteors.json` index — but
+  passed the *image's* filename as the remote destination name for **all three**.
+  So the index was uploaded to the remote website under the image's name, and the
+  real remote `meteors.json` was never refreshed: the online gallery and the
+  per-night chart stayed frozen on the first night ever detected, even though new
+  images kept arriving. Each file now keeps its own remote name. (The local
+  `meteors.json` and the image/thumbnail uploads were always correct — only the
+  remote index name was wrong.)
+
 ## v0.4.1
 
 Closes the fragmented-trail gap the v0.4.0 "Known limitation" called out —
