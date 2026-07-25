@@ -164,6 +164,39 @@ sodium/iron, blue-white for fast trails. The gallery image is therefore never
 painted over; the optional marked copy draws brackets *around* the streak, never on
 it.
 
+## Learning a classifier from your own labels (optional)
+
+The heuristic vetoes are good but not perfect. The module can bootstrap a *learned*
+classifier from your own sky, with no extra hardware — you just confirm what each
+detection actually was:
+
+1. **Positives** are the confirmed meteors (`meteors.json` + the gallery images).
+2. **Negatives** are the rejected streaks. With **Save Rejected-Candidate Crops**
+   on, every veto — including the satellites/aircraft the moving-track filter
+   catches — is saved as a small crop under `meteors/vetoed/` and recorded in
+   `meteors_vetoed.json`.
+3. **Labels** come from you: the meteor gallery page shows each confirmed meteor
+   (click → the detected position is drawn *over* the image, never burnt in) and a
+   *Rejected candidates* strip, each with one-tap buttons — ☄️ meteor, ✈️ aircraft,
+   🛰️ satellite, ✨ artifact, ❓ unsure. A tiny `label.php` endpoint appends them to
+   `labels.json`.
+
+Then train:
+
+```bash
+# pull the labels you made online, then train
+curl -s https://<your-site>/label.php -o ~/allsky/html/allsky/labels.json
+python3 tools/train_classifier.py
+```
+
+`tools/train_classifier.py` (pure NumPy — no scikit-learn) assembles the geometric
+features, lets **human labels override** the weak source labels, and trains a
+logistic-regression meteor/not-meteor classifier with stratified k-fold
+cross-validation, writing `classifier.json`. It runs immediately on the weak labels
+as a baseline and **tells you honestly** when there are too few human labels to
+trust — every label you add on the website makes it sharper. Use `--report` to just
+see the feature distributions per class.
+
 ## Roadmap
 
 - [ ] **Keogram markers** for detected meteors.
@@ -175,6 +208,9 @@ it.
       with Chart.js — no backend required.
 - [x] Meteor-shower radiant awareness (Perseids, Geminids, …) — date-based context
       **and** geometric radiant matching via a plate-solved fisheye calibration.
+- [x] **Learned classifier from your own labels** — website annotation of confirmed
+      and rejected detections + `tools/train_classifier.py`. *(collecting labels;
+      the model sharpens as they accumulate)*
 - [ ] Optional pull request to `AllskyTeam/allsky-modules`.
 
 ## Credits & inspiration
