@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.4.3
+
+Groundwork for a learned classifier: capture the **negative** examples.
+
+- **Rejected-candidate crops** (`save_vetoed`, default on). Every vetoed streak —
+  the recurrence / star-trail / dashed / fragmented rejects **and** the
+  satellites/aircraft caught by the moving-track filter — is now saved as a small
+  crop in a `vetoed/` subfolder and recorded (a `thumb` field) in
+  `meteors_vetoed.json`, then uploaded to the remote `meteors/vetoed/` folder.
+  These are the negatives; labelling them on the website (aircraft / satellite /
+  artifact / meteor / unsure) builds a training set. The confirmed meteors are the
+  positives. A companion `tools/train_classifier.py` reads both plus the human
+  `labels.json`.
+- The remote `meteors/vetoed/` folder must exist first — `upload.sh` does not
+  create directories (create it once over SFTP).
+
 ## v0.4.2
 
 Fixes a remote-upload bug that froze the online gallery on a single night.

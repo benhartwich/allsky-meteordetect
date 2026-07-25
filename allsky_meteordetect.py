@@ -27,7 +27,7 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.4.2",
+    "version": "v0.4.3",
     "events": [
         "night"
     ],
@@ -56,6 +56,7 @@ metaData = {
         "trail_tol": "12",
         "upload_remote": "true",
         "outputdir": "",
+        "save_vetoed": "true",
         "save_debug": "false",
         "debug": "false"
     },
@@ -192,6 +193,12 @@ metaData = {
             "help": "Where meteor images are written (with a thumbnails/ subfolder). Empty = website meteors folder.",
             "type": {"fieldtype": "text"}
         },
+        "save_vetoed": {
+            "required": "false",
+            "description": "Save Rejected-Candidate Crops",
+            "help": "Save a small crop around every REJECTED streak (into a 'vetoed/' subfolder) and record it in meteors_vetoed.json. These are the negative examples (aircraft / satellite / artifact) — labelling them on the website builds the training set for a future classifier. Uploaded to the remote 'meteors/vetoed' folder when remote upload is on.",
+            "type": {"fieldtype": "checkbox"}
+        },
         "save_debug": {
             "required": "false",
             "description": "Save Marked Copy",
@@ -262,6 +269,15 @@ metaData = {
                 "authorurl": "https://astronomy.garden",
                 "changes": [
                     "Fix remote upload of meteors.json: the per-hit upload loop reused the image's filename as the remote destination name for all three files, so the log was uploaded UNDER the image name and the remote meteors.json was never refreshed — the remote gallery and per-night chart stayed frozen on the first night ever detected. Each file now keeps its own remote name (image, thumbnail, meteors.json)."
+                ]
+            }
+        ],
+        "v0.4.3": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Save rejected-candidate crops (save_vetoed, default on): every vetoed streak — including satellites/aircraft caught by the moving-track filter — is now saved as a small labelling crop in a 'vetoed/' subfolder and recorded (thumb field) in meteors_vetoed.json, then uploaded to the remote 'meteors/vetoed' folder. These are the NEGATIVE examples; labelling them on the website (aircraft / satellite / artifact) builds the training set for a future classifier. The remote 'meteors/vetoed' folder must exist (upload.sh does not create directories)."
                 ]
             }
         ]
@@ -366,21 +382,82 @@ def _trailAngleAt(cx, cy):
         return None
 
 
-def _logVetoed(outdir, stamp, cand, reason, detail):
-    """Append a rejected streak to a rolling meteors_vetoed.json for tuning/validation."""
+def _saveVetoThumb(vetoeddir, img_path, stamp, cand):
+    """Save a small crop around a REJECTED streak so it can be human-labelled
+    (aircraft / satellite / artifact) on the website — the negative examples for a
+    future classifier. Crops from the same full frame the meteor image comes from.
+    Returns the filename (or None). Never raises."""
+    try:
+        img = cv2.imread(img_path)
+        if img is None:
+            return None
+        h, w = img.shape[:2]
+        cx, cy, ln, a = cand["cx"], cand["cy"], cand["len"], np.radians(cand["ang"])
+        hx, hy = np.cos(a) * ln / 2.0, np.sin(a) * ln / 2.0
+        pad = 180
+        x0 = max(0, int(min(cx - hx, cx + hx) - pad)); x1 = min(w, int(max(cx - hx, cx + hx) + pad))
+        y0 = max(0, int(min(cy - hy, cy + hy) - pad)); y1 = min(h, int(max(cy - hy, cy + hy) + pad))
+        crop = img[y0:y1, x0:x1]
+        if crop.size == 0:
+            return None
+        if crop.shape[1] > 640:
+            sc = 640.0 / crop.shape[1]
+            crop = cv2.resize(crop, (640, max(1, int(crop.shape[0] * sc))), interpolation=cv2.INTER_AREA)
+        os.makedirs(vetoeddir, exist_ok=True)
+        fname = f"vetoed-{stamp}-{int(round(cand['cx']))}-{int(round(cand['cy']))}.jpg"
+        cv2.imwrite(os.path.join(vetoeddir, fname), crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        return fname
+    except Exception:
+        return None
+
+
+def _logVetoed(outdir, stamp, cand, reason, detail, thumb=None):
+    """Append a rejected streak to a rolling meteors_vetoed.json for tuning/validation.
+    `thumb` (if given) is the crop filename so the website can show it for labelling."""
     try:
         path = os.path.join(outdir, "meteors_vetoed.json")
         try:
             log = json.load(open(path)) if os.path.exists(path) else []
         except Exception:
             log = []
-        log.append({"time": stamp, "reason": reason, "detail": round(float(detail), 1),
-                    "cx": round(cand["cx"], 1), "cy": round(cand["cy"], 1),
-                    "len": round(cand["len"], 1), "elong": round(cand["elong"], 1),
-                    "ang": round(cand["ang"], 1), "peak": cand.get("peak")})
+        rec = {"time": stamp, "reason": reason, "detail": round(float(detail), 1),
+               "cx": round(cand["cx"], 1), "cy": round(cand["cy"], 1),
+               "len": round(cand["len"], 1), "elong": round(cand["elong"], 1),
+               "ang": round(cand["ang"], 1), "peak": cand.get("peak")}
+        if thumb:
+            rec["thumb"] = thumb
+        log.append(rec)
         json.dump(log[-500:], open(path, "w"), default=float)
     except Exception:
         pass
+
+
+def _uploadVetoed(outdir, vetoeddir, thumb_fnames):
+    """Upload rejected-candidate crops + the vetoed index to the remote website
+    (remote <imagedir>/meteors/vetoed/). The remote 'meteors/vetoed' folder must
+    already exist — upload.sh does not create directories. Never raises."""
+    try:
+        if str(s.getSetting("useremotewebsite")).lower() not in ("true", "1", "yes", "on"):
+            return
+        scripts = s.getEnvironmentVariable("ALLSKY_SCRIPTS") or \
+            os.path.join(s.getEnvironmentVariable("ALLSKY_HOME") or os.path.expanduser("~/allsky"), "scripts")
+        uploader = os.path.join(scripts, "upload.sh")
+        if not os.path.isfile(uploader):
+            return
+        base = (s.getSetting("remotewebsiteimagedir") or "").rstrip("/")
+        mdir = f"{base}/meteors" if base else "meteors"
+        vdir = mdir + "/vetoed"
+        for fn in thumb_fnames:
+            local = os.path.join(vetoeddir, fn)
+            if os.path.isfile(local):
+                subprocess.Popen([uploader, "--silent", "--wait", "--remote-web", local, vdir, fn, "MeteorVetoed"],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        vj = os.path.join(outdir, "meteors_vetoed.json")
+        if os.path.isfile(vj):
+            subprocess.Popen([uploader, "--silent", "--wait", "--remote-web", vj, mdir, "meteors_vetoed.json", "MeteorVetoedLog"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as ex:
+        s.log(1, f"WARNING: meteordetect vetoed upload failed: {ex}")
 
 
 # --- persistent state between frames (module stays loaded in the postprocess service) ---
@@ -679,6 +756,7 @@ def meteordetect(params, event):
     trail_filter = _truthy(params.get("trail_filter", True))
     trail_tol = s.asfloat(params.get("trail_tol", 12.0))
     upload_remote = _truthy(params.get("upload_remote", True))
+    save_vetoed = _truthy(params.get("save_vetoed", True))
     save_debug = _truthy(params.get("save_debug", False))
     debug = _truthy(params.get("debug", False))
 
@@ -690,6 +768,7 @@ def meteordetect(params, event):
                                    "html", "allsky")
         outdir = os.path.join(website, "meteors")
     thumbdir = os.path.join(outdir, "thumbnails")
+    vetoeddir = os.path.join(outdir, "vetoed")
 
     if debug:
         s.startModuleDebug(metaData["module"])
@@ -782,28 +861,37 @@ def meteordetect(params, event):
     # difference images at the SAME location (its appearance, then its disappearance).
     # We confirm a candidate only if the current frame repeats it at the same spot AND
     # it is not a moving track, a recurring position, or aligned with the star trails.
+    veto_thumbs = []
     for entry in pending:
+        # veto helper: save a labelling crop of the rejected streak (negative example)
+        # and log it. Bound the img_path/stamp per iteration so the closure is safe.
+        def _veto(cand, reason, detail, _ip=entry.get("img_path"), _stamp=entry["stamp"]):
+            t = _saveVetoThumb(vetoeddir, _ip, _stamp, cand) if (save_vetoed and _ip) else None
+            if t:
+                veto_thumbs.append(t)
+            _logVetoed(outdir, _stamp, cand, reason, detail, t)
         keep = []
         for cand in entry["streaks"]:
             if sat_filter and any(_progressing(cur, cand) for cur in streaks):
                 moving += 1
+                _veto(cand, "moving", 0)
                 continue
             if not any(_similar(cur, cand) for cur in streaks):
                 continue  # no same-location disappearance -> flicker -> discard
             rec = _recurrence(cand) if repeat_filter else 0
             if repeat_filter and rec >= repeat_k:
                 vetoed += 1
-                _logVetoed(outdir, entry["stamp"], cand, "repeat", rec)
+                _veto(cand, "repeat", rec)
                 continue
             if trail_filter and cand["len"] <= 130.0:          # long/bright fireballs exempt
                 ta = _trailAngleAt(cand["cx"], cand["cy"])
                 if ta is not None and _angDiff(cand["ang"], ta) <= trail_tol:
                     vetoed += 1
-                    _logVetoed(outdir, entry["stamp"], cand, "trail", _angDiff(cand["ang"], ta))
+                    _veto(cand, "trail", _angDiff(cand["ang"], ta))
                     continue
             if dash_filter and cand["len"] >= dash_min_len and cand.get("dash_runs", 0) >= dash_runs:
                 vetoed += 1
-                _logVetoed(outdir, entry["stamp"], cand, "dashed", cand.get("dash_runs", 0))
+                _veto(cand, "dashed", cand.get("dash_runs", 0))
                 continue
             # fragmented-trail check. Armed (frag_filter on) it vetoes; off it is
             # shadow-only: log a frag-shadow entry for tuning but keep the meteor,
@@ -811,9 +899,9 @@ def meteordetect(params, event):
             if cand["len"] >= frag_min_len and cand.get("frag_n", 0) >= frag_min:
                 if frag_filter:
                     vetoed += 1
-                    _logVetoed(outdir, entry["stamp"], cand, "fragmented", cand.get("frag_n", 0))
+                    _veto(cand, "fragmented", cand.get("frag_n", 0))
                     continue
-                _logVetoed(outdir, entry["stamp"], cand, "frag-shadow", cand.get("frag_n", 0))
+                _veto(cand, "frag-shadow", cand.get("frag_n", 0))
             keep.append(cand)
         if keep:
             n = _saveMeteor(entry["img_path"], entry["stamp"], keep,
@@ -822,6 +910,8 @@ def meteordetect(params, event):
             if n and upload_remote:
                 _uploadRemote(outdir, thumbdir, f"meteors-{entry['stamp']}.jpg")
         _safeRemove(entry["img_path"])
+    if upload_remote and veto_thumbs:
+        _uploadVetoed(outdir, vetoeddir, veto_thumbs)
 
     # --- 2) collect NEW candidates from the current frame (deferred to next frame) ---
     new_cands = []
