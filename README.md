@@ -112,6 +112,9 @@ fail because tree interiors are smooth and averaging washes out their texture.
 | Recurrence Frames | `3` | Earlier frames at the same spot (~55 px, ~25 min) needed to call it recurring — keep ≥3 |
 | Reject Star-Trail Orientation | on | Reject a streak parallel to the local diurnal star-trail direction (needs the fisheye calibration); fireballs >130 px exempt |
 | Star-Trail Tolerance | `12`° | How close to the trail direction counts as a trailed star |
+| Reject Bright-Star Scintillation | on | Reject a short streak sitting on a catalogue bright star — a star twinkling brighter between frames makes a compact diff blob at its position that mimics a meteor. Needs the fisheye calibration + `stars.json`; fireballs >130 px exempt |
+| Star-Match Radius | `16` px | How close a streak's centre must be to a projected catalogue star to count as that star. Size it to the calibration RMS (~4–6 px) plus a few px of blob offset |
+| Star Magnitude Limit | `5.0` | Only stars brighter than this are used; fainter stars rarely brighten enough to trigger, and including them risks vetoing a real meteor |
 | Upload to Remote Website | on | Upload each hit via Allsky's `upload.sh` |
 | Save Rejected-Candidate Crops | on | Save a labelling crop of every *rejected* streak (into `vetoed/`) as the negative examples for a future classifier — see below |
 | Save Marked Copy | off | Extra copy with brackets *around* the streak |
@@ -121,7 +124,11 @@ bright stars flicker into short streaks that share a meteor's appear-then-disapp
 signature. The defenses are, in order of impact: geometry (a real meteor is long and
 thin — raise *Min Streak Length* / *Min Elongation* if a clear night still produces
 false positives), the scintillation guard, and same-location confirmation. There is
-no single perfect filter; tune the geometry to your sky.
+no single perfect filter; tune the geometry to your sky. With a fisheye
+calibration, the **bright-star scintillation veto** adds a targeted defense: it
+rejects a short blob that sits exactly on a catalogue bright star, which is what a
+twinkling star produces — geometry alone can't tell that blob from a faint short
+meteor, but its position on a known star can.
 
 ## Fisheye calibration & geometric radiant matching (optional)
 
@@ -141,6 +148,15 @@ robust to star density) and bootstrap the full-frame fit from it. The result is 
 `match_radiant`: a meteor travels along a great circle whose backward extension
 passes through its radiant, so the module tests which active shower's radiant lies
 on that circle (and above the horizon).
+
+The same projection also drives the **bright-star scintillation veto**: a bundled
+Hipparcos subset (`stars.json`, Vmag < 6) is projected to pixels for each frame's
+time, and a short candidate that lands within *Star-Match Radius* of a catalogue
+star brighter than *Star Magnitude Limit* is rejected as a twinkling star rather
+than a meteor. It needs `stars.json` next to the module; if it (or the calibration)
+is missing, the veto is silently skipped. **Accuracy matters:** size the radius to
+your calibration RMS — regenerate `calibration.json` if bright stars drift off their
+catalogue positions, or the veto will either miss scintillation or clip real meteors.
 
 Drop `allsky_fisheye.py` + `calibration.json` next to the module; if either is
 missing, radiant matching is silently skipped. **The calibration is per-camera** —

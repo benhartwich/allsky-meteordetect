@@ -27,7 +27,7 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.4.3",
+    "version": "v0.4.4",
     "events": [
         "night"
     ],
@@ -54,6 +54,9 @@ metaData = {
         "repeat_k": "3",
         "trail_filter": "true",
         "trail_tol": "12",
+        "star_filter": "true",
+        "star_radius": "16",
+        "star_maglim": "5.0",
         "upload_remote": "true",
         "outputdir": "",
         "save_vetoed": "true",
@@ -181,6 +184,24 @@ metaData = {
             "help": "How close a streak's angle must be to the local star-trail direction to be rejected. Larger = stricter (rejects more), but risks discarding a real meteor that happens to run parallel to the star trails.",
             "type": {"fieldtype": "spinner", "min": 4, "max": 30, "step": 1}
         },
+        "star_filter": {
+            "required": "false",
+            "description": "Reject Bright-Star Scintillation",
+            "help": "Reject a short streak that sits on a catalogue bright star: on clear nights a star twinkles brighter between frames, so the frame difference shows a compact blob at the star's position that mimics a meteor. Long/bright fireballs are exempt. Needs allsky_fisheye.py + calibration.json + stars.json; silently skipped otherwise.",
+            "type": {"fieldtype": "checkbox"}
+        },
+        "star_radius": {
+            "required": "false",
+            "description": "Star-Match Radius (px)",
+            "help": "How close a streak's centre must be to a projected catalogue star to count as that star scintillating. Size it to the calibration accuracy (RMS ~4-6 px) plus a few px of blob offset; too large risks vetoing a real meteor that happens to pass over a star.",
+            "type": {"fieldtype": "spinner", "min": 6, "max": 40, "step": 1}
+        },
+        "star_maglim": {
+            "required": "false",
+            "description": "Star Magnitude Limit",
+            "help": "Only stars brighter than this visual magnitude are used for the veto. Fainter stars rarely brighten enough to trigger a detection, and including them raises the chance of vetoing a real meteor. 5.0 covers the naked-eye bright stars that actually scintillate.",
+            "type": {"fieldtype": "spinner", "min": 2.0, "max": 6.0, "step": 0.5}
+        },
         "upload_remote": {
             "required": "false",
             "description": "Upload to Remote Website",
@@ -278,6 +299,16 @@ metaData = {
                 "authorurl": "https://astronomy.garden",
                 "changes": [
                     "Save rejected-candidate crops (save_vetoed, default on): every vetoed streak — including satellites/aircraft caught by the moving-track filter — is now saved as a small labelling crop in a 'vetoed/' subfolder and recorded (thumb field) in meteors_vetoed.json, then uploaded to the remote 'meteors/vetoed' folder. These are the NEGATIVE examples; labelling them on the website (aircraft / satellite / artifact) builds the training set for a future classifier. The remote 'meteors/vetoed' folder must exist (upload.sh does not create directories)."
+                ]
+            }
+        ],
+        "v0.4.4": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Bright-star scintillation veto (star_filter, default on): reject a short streak whose centre sits within star_radius px (default 16) of a projected catalogue star brighter than star_maglim (default 5.0). On clear nights a bright star twinkles brighter between frames, producing a compact frame-difference blob at the star's position that mimics a meteor's appear/vanish signature. The star positions come from a bundled Hipparcos subset (stars.json, Vmag<6) projected with the fisheye calibration for the frame's time; long/bright fireballs (>130 px) are exempt. Silently skipped if allsky_fisheye.py / calibration.json / stars.json are absent. Logged as reason 'star' in meteors_vetoed.json.",
+                    "Refined the fisheye calibration against a deep Hipparcos catalogue seeded from the previous fit (RMS ~4 px over 317 stars across 3 clear-night frames); tightened a1, which had pushed mid/edge stars ~15 px outward and would have blunted the star veto."
                 ]
             }
         ]
@@ -380,6 +411,72 @@ def _trailAngleAt(cx, cy):
         return float(np.degrees(np.arctan2(y2 - y1, x2 - x1)) % 180.0)
     except Exception:
         return None
+
+
+# --- star-catalog scintillation veto (needs the fisheye calibration + star.json) ---
+# On a clear night a bright star scintillates: it brightens between two frames, so the
+# frame difference shows a short compact blob AT the star's position — the appear/vanish
+# signature of a meteor, but sitting exactly on a catalogue star. We project the bright
+# stars for the frame's time and reject a short candidate that lands on one.
+_starCache = {"done": False, "cat": None}
+
+def _loadStars():
+    """Lazy-load the bundled bright-star catalogue [[ra_deg, dec_deg, vmag], ...]."""
+    if not _starCache["done"]:
+        _starCache["done"] = True
+        try:
+            p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stars.json")
+            _starCache["cat"] = np.asarray(json.load(open(p))["stars"], dtype=float)
+        except Exception as ex:
+            s.log(1, f"INFO: meteordetect star veto disabled (no catalogue: {ex})")
+    return _starCache["cat"]
+
+
+_starProjCache = {"key": None, "xy": None}
+
+def _brightStarPix(maglim):
+    """Projected pixel positions (Nx2) of catalogue stars brighter than `maglim` and
+    above the horizon, at the current UTC. Returns None if calibration/catalogue is
+    missing. Cached per (minute, maglim): a frame's candidates share one time and the
+    stars drift only ~0.25 px/s, far below the veto radius."""
+    mod, calib = _loadCalib()
+    cat = _loadStars()
+    if not mod or not calib or cat is None:
+        return None
+    g = time.gmtime()
+    key = (g.tm_year, g.tm_yday, g.tm_hour, g.tm_min, round(float(maglim), 1))
+    if _starProjCache["key"] == key:
+        return _starProjCache["xy"]
+    try:
+        u = (g.tm_year, g.tm_mon, g.tm_mday, g.tm_hour, g.tm_min, g.tm_sec)
+        lst = mod.local_sidereal_deg(u, calib["lon"])
+        lat = calib["lat"]
+        xy = []
+        for ra, dec, mag in cat:
+            if mag > maglim:
+                continue
+            alt, az = mod.radec_to_altaz(ra, dec, lst, lat)
+            if alt < 12.0:                                    # skip horizon/tree mess
+                continue
+            xy.append(mod.altaz_to_pixel(alt, az, calib))
+        arr = np.asarray(xy, dtype=float) if xy else np.empty((0, 2))
+        _starProjCache["key"] = key
+        _starProjCache["xy"] = arr
+        return arr
+    except Exception as ex:
+        s.log(1, f"WARNING: meteordetect star projection failed: {ex}")
+        return None
+
+
+def _onStar(cx, cy, maglim, radius):
+    """Distance to the nearest projected bright star if a star lies within `radius` px
+    of pixel (cx,cy) — i.e. the blob is that star scintillating — else None."""
+    arr = _brightStarPix(maglim)
+    if arr is None or len(arr) == 0:
+        return None
+    d = np.hypot(arr[:, 0] - cx, arr[:, 1] - cy)
+    m = float(d.min())
+    return m if m <= radius else None
 
 
 def _saveVetoThumb(vetoeddir, img_path, stamp, cand):
@@ -755,6 +852,9 @@ def meteordetect(params, event):
     repeat_k = s.int(params.get("repeat_k", 3))
     trail_filter = _truthy(params.get("trail_filter", True))
     trail_tol = s.asfloat(params.get("trail_tol", 12.0))
+    star_filter = _truthy(params.get("star_filter", True))
+    star_radius = s.asfloat(params.get("star_radius", 16.0))
+    star_maglim = s.asfloat(params.get("star_maglim", 5.0))
     upload_remote = _truthy(params.get("upload_remote", True))
     save_vetoed = _truthy(params.get("save_vetoed", True))
     save_debug = _truthy(params.get("save_debug", False))
@@ -888,6 +988,12 @@ def meteordetect(params, event):
                 if ta is not None and _angDiff(cand["ang"], ta) <= trail_tol:
                     vetoed += 1
                     _veto(cand, "trail", _angDiff(cand["ang"], ta))
+                    continue
+            if star_filter and cand["len"] <= 130.0:           # long/bright fireballs exempt
+                sd = _onStar(cand["cx"], cand["cy"], star_maglim, star_radius)
+                if sd is not None:                             # blob sits on a bright star
+                    vetoed += 1
+                    _veto(cand, "star", sd)
                     continue
             if dash_filter and cand["len"] >= dash_min_len and cand.get("dash_runs", 0) >= dash_runs:
                 vetoed += 1

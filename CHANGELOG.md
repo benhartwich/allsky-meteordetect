@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.4.4
+
+Reject **bright-star scintillation** — the clear-night false positive geometry alone
+can't rule out.
+
+- **Bright-star scintillation veto** (`star_filter`, default on). On a clear night a
+  bright star twinkles brighter between two frames, so the frame difference shows a
+  short compact blob *at the star's position* — the appear/vanish signature of a
+  meteor. The module now projects a bundled Hipparcos subset (`stars.json`,
+  Vmag < 6) with the fisheye calibration for the frame's time and rejects a short
+  candidate landing within `star_radius` px (default 16) of a star brighter than
+  `star_maglim` (default 5.0). Long/bright fireballs (>130 px) are exempt. Logged as
+  reason `star` in `meteors_vetoed.json`. Silently skipped without
+  `allsky_fisheye.py` / `calibration.json` / `stars.json`.
+  - Validated against local history: **0 of 24** confirmed short meteors would be
+    caught (no real meteor harmed), while genuine bright-star scintillation blobs are
+    rejected precisely.
+- **Refined fisheye calibration.** Re-fit against a deep Hipparcos catalogue, seeded
+  from the previous solution, over three clear-night frames (RMS ~4 px, 317 stars).
+  The old `a1` had pushed mid/edge stars ~15 px outward — enough to blunt a
+  position-based star veto — so this tightening is a prerequisite for the veto above.
+
 ## v0.4.3
 
 Groundwork for a learned classifier: capture the **negative** examples.
