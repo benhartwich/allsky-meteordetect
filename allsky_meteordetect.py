@@ -311,6 +311,15 @@ metaData = {
                     "Refined the fisheye calibration against a deep Hipparcos catalogue seeded from the previous fit (RMS ~4 px over 317 stars across 3 clear-night frames); tightened a1, which had pushed mid/edge stars ~15 px outward and would have blunted the star veto."
                 ]
             }
+        ],
+        "v0.4.5": [
+            {
+                "author": "Carlos Gil",
+                "authorurl": "https://github.com/ea1ii",
+                "changes": [
+                    "Save images in regular allky webui for further browsing."
+                ]
+            }
         ]
     }
 }
@@ -770,22 +779,55 @@ def _saveMeteor(img_path, stamp, streaks, outdir, thumbdir, save_debug):
     except Exception:
         log = []
     showers = _activeShowers(stamp)
+    log_day = []    # CG: create day log for meteors detected on the same day
     for m in streaks:
         radiant = _matchRadiant(m["p1"], m["p2"], showers)   # geometric attribution
-        log.append({"time": stamp, "file": fname,
+        # CG: split new entry to both append to meteors.json and image.json
+        new_entry = {"time": stamp, "file": fname,
                     "length": round(m["len"], 1), "angle": round(m["ang"], 1),
                     "elong": round(m["elong"], 1), "peak": m.get("peak"),
                     "cx": round(m["cx"], 1), "cy": round(m["cy"], 1),
                     "p1": [round(m["p1"][0], 1), round(m["p1"][1], 1)],
                     "p2": [round(m["p2"][0], 1), round(m["p2"][1], 1)],
                     "frag_n": m.get("frag_n", 0), "frag_ext": round(m.get("frag_ext", 0.0), 1),
-                    "showers": showers, "radiant": radiant})
+                    "showers": showers, "radiant": radiant}
+        log.append(new_entry)
+        log_day.append(new_entry)
+
     try:
-        json.dump(log[-2000:], open(logpath, "w"))
+        json.dump(log[-2000:], open(logpath, "w"), indent=3) # CG: added indent=3 for better readability
     except Exception as ex:
         s.log(1, f"WARNING: meteordetect could not write log: {ex}")
-    return 1
+    
 
+    # CG:
+    #   let's save in: allsky/images/<date>/meteors/
+    #   also allsky/images/<date>/meteors/thumbnails/
+    #   and a single .json file per image
+
+    meteor_date = stamp[0:8] # get just the date part of the timestamp
+    # CG: create the directories if they don't exist  
+    base_outdir = os.path.join(s.getEnvironmentVariable("ALLSKY_IMAGES"), meteor_date, "meteors")
+    base_outdir_thumbs = os.path.join(s.getEnvironmentVariable("ALLSKY_IMAGES"), meteor_date, "meteors", "thumbnails")
+    # CG: paths will be allsky/images/<date>/meteors/ and allsky/images/<date>/meteors/thumbnails/
+    os.makedirs(base_outdir_thumbs, exist_ok=True)
+
+    cv2.imwrite(os.path.join(base_outdir, f"meteors-{stamp}.jpg"), img)       # save image
+    cv2.imwrite(os.path.join(base_outdir_thumbs, f"meteors-{stamp}.jpg"),
+                cv2.resize(img, (0, 0), fx=0.25, fy=0.25))                    # save thumbnail
+
+    if save_debug:  # CG: probably another option should be added to the config to save the marked image and thumbnail
+                    # CG: browsing in main allsky webui should thereby be recoded
+        cv2.imwrite(os.path.join(base_outdir, f"meteors-{stamp}-marked.jpg"), marked)   # save marked image
+        cv2.imwrite(os.path.join(base_outdir_thumbs, f"meteors-{stamp}-marked.jpg"),
+                    cv2.resize(marked, (0, 0), fx=0.25, fy=0.25))                       # save marked thumbnail
+
+    try:
+        json.dump(log_day, open(os.path.join(base_outdir,f"{stamp}.json"), "x"), indent=3) # save data
+    except Exception as ex:
+        s.log(1, f"WARNING: meteordetect could not write data: {ex}")
+
+    return 1
 
 def _uploadRemote(outdir, thumbdir, fname):
     """Upload a saved meteor image + thumbnail to the remote website via Allsky's upload.sh.
