@@ -49,7 +49,13 @@ Key points:
 
 ## Requirements
 
-- Allsky `v2023.05.01_04` or later (module system).
+- Allsky `v2023.05.01_04` or later — that is the module API this needs, **not** a
+  release that ships it. This is a third-party module: it is not bundled with Allsky
+  or the official [allsky-modules](https://github.com/AllskyTeam/allsky-modules)
+  collection, so the Module Manager will not list it until you install it (below).
+- Tested on Allsky `v2024.12.06_06`. Not yet tested on the 2025 branch — if it does
+  not appear there after installing, please
+  [open an issue](https://github.com/benhartwich/allsky-meteordetect/issues).
 - Python packages already present in the Allsky virtualenv: `opencv-python`, `numpy`.
 
 ## Installation
@@ -62,8 +68,10 @@ cp allsky_meteordetect.py ~/allsky/scripts/modules/
 
 or drop it into a clone of
 [allsky-modules](https://github.com/AllskyTeam/allsky-modules) and run its
-installer. Then enable **“Meteor Detection (temporal)”** in the Allsky WebUI under
-*Module Settings* for the **night** flow.
+installer. Then open the Module Manager in the Allsky WebUI, pick the **night**
+flow and add **“Meteor Detection”**. Place it directly after *Load Image*: the module
+saves the frame as it stands at its position in the flow, so anything placed before
+it — the overlay, for instance — ends up in the saved meteor images.
 
 ## Building a detection mask
 
