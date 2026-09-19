@@ -117,7 +117,8 @@ fail because tree interiors are smooth and averaging washes out their texture.
 | Star Magnitude Limit | `5.0` | Only stars brighter than this are used; fainter stars rarely brighten enough to trigger, and including them risks vetoing a real meteor |
 | Upload to Remote Website | on | Upload each hit via Allsky's `upload.sh` |
 | Save Rejected-Candidate Crops | on | Save a labelling crop of every *rejected* streak (into `vetoed/`) as the negative examples for a future classifier — see below |
-| Save Marked Copy | off | Extra copy with brackets *around* the streak |
+| Browse in the Allsky WebUI | on | Also file each meteor under `images/<day>/meteors/` so the WebUI's **Meteors** page can browse it day by day — see [Output](#output) |
+| Save Marked Copy | on | Extra copy with brackets *around* the streak, plus its thumbnail (the WebUI's *Use Marked Meteors* option needs both) |
 
 **Clear nights are the hard case.** Star scintillation and slight frame shake make
 bright stars flicker into short streaks that share a meteor's appear-then-disappear
@@ -164,14 +165,35 @@ regenerate it for your own site with `tools/calibrate_fisheye.py`.
 
 ## Output
 
-- **`meteors-<timestamp>.jpg`** in the website `meteors/` folder, plus a thumbnail
-  in `meteors/thumbnails/` — picked up automatically by Allsky's meteor gallery
-  page. **The gallery image keeps the meteor's true colours, untouched.**
+Each hit is written to **two** places, because the website and the WebUI want
+different layouts.
+
+**Website folder** (`meteors/`, the source for the remote upload and the per-night
+charts):
+
+- **`meteors-<timestamp>.jpg`**, plus a thumbnail in `meteors/thumbnails/` —
+  picked up automatically by Allsky's meteor gallery page. **The gallery image keeps
+  the meteor's true colours, untouched.**
+- **`meteors-<timestamp>-marked.jpg`** and its thumbnail, when *Save Marked Copy*
+  is on.
 - **`meteors.json`** — a rolling log of
   `{time, file, length, angle, elong, peak, frag_n, frag_ext, showers, radiant}`
   for later statistics (`showers` = active by date, `radiant` = geometric
   attribution if calibrated, `frag_n` = collinear-fragment shadow metric).
 - Optional remote-website upload of each hit.
+
+**Allsky WebUI folder** (`images/<day>/meteors/`, when *Browse in the Allsky WebUI*
+is on) — the layout the WebUI's **Meteors** page reads:
+
+- the same image, thumbnail and marked copy, filed under the night's day folder;
+- **`meteors-<timestamp>.json`** — a sidecar holding *only that image's* streaks
+  (same fields as the rolling log). The WebUI reads one file per image rather than
+  scanning a rolling log, so the sidecar exists alongside it, not instead of it.
+
+The day folder follows Allsky's own convention: it is the night's *evening* date
+(`DATE_NAME`, 12-hour offset), while the file name carries the real timestamp. A
+meteor at 03:15 on the 19th therefore lands in `images/20260918/` as
+`meteors-20260919031514.jpg` — exactly like Allsky's own `image-*.jpg` files.
 
 ### Why true colour matters
 

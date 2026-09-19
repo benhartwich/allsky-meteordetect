@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.5.0
+
+Make the detections browsable in the **Allsky WebUI**, alongside the existing website
+gallery (see [AllskyTeam/allsky#5227](https://github.com/AllskyTeam/allsky/pull/5227)).
+
+- **WebUI meteor browsing** (`save_webui`, default on). Every saved meteor is now
+  additionally filed under `images/<day>/meteors/` — image, thumbnail, marked copy
+  and a json sidecar — which is the layout the WebUI's *Meteors* page browses. The
+  website `meteors/` folder is written exactly as before, so the remote upload and
+  the per-night charts keep reading the rolling `meteors.json` there. Nothing moves;
+  the WebUI copy is an addition.
+- **Per-image json sidecar** `meteors-<timestamp>.json` next to each image, holding
+  just that image's streaks. Same fields as the rolling log (`length`, `angle`,
+  `elong`, `peak`, `p1`, `p2`, `frag_n`, `frag_ext`, `showers`, `radiant`) — the
+  WebUI reads metadata one file per image rather than scanning a rolling log.
+- **Marked copy promoted out of Debug** (`save_marked`, default **on**) and its
+  thumbnail is now written too. The WebUI's *Use Marked Meteors* option links
+  `thumbnails/<name>-marked.jpg` without checking that it exists, so a missing
+  thumbnail renders as a broken image. `save_debug` stays as a legacy alias: an
+  existing config that had it on still forces the marked copy on.
+- **Day folder pinned at stash time.** A candidate is only confirmed on a later
+  frame, which may already sit in the next `DATE_NAME` period; the night's folder is
+  now recorded when the candidate is stashed, so a meteor caught either side of the
+  rollover cannot land in the wrong night.
+
 ## v0.4.4
 
 Reject **bright-star scintillation** — the clear-night false positive geometry alone

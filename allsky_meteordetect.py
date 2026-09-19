@@ -18,8 +18,10 @@ debug image draws brackets AROUND the streak, never over it, so the meteor's col
 """
 import allsky_shared as s
 import os
+import re
 import json
 import time
+import shutil
 import subprocess
 import cv2
 import numpy as np
@@ -27,7 +29,7 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.4.4",
+    "version": "v0.5.0",
     "events": [
         "night"
     ],
@@ -59,6 +61,8 @@ metaData = {
         "star_maglim": "5.0",
         "upload_remote": "true",
         "outputdir": "",
+        "save_webui": "true",
+        "save_marked": "true",
         "save_vetoed": "true",
         "save_debug": "false",
         "debug": "false"
@@ -214,6 +218,18 @@ metaData = {
             "help": "Where meteor images are written (with a thumbnails/ subfolder). Empty = website meteors folder.",
             "type": {"fieldtype": "text"}
         },
+        "save_webui": {
+            "required": "false",
+            "description": "Browse in the Allsky WebUI",
+            "help": "Also file each meteor under images/<day>/meteors/ (image, thumbnail, marked copy and a per-meteor json sidecar) so the Allsky WebUI 'Meteors' page can browse it day by day. The website folder above is still written either way — the remote upload and the per-night charts read that one.",
+            "type": {"fieldtype": "checkbox"}
+        },
+        "save_marked": {
+            "required": "false",
+            "description": "Save Marked Copy",
+            "help": "Save a second copy with brackets AROUND the streak (never over it), plus its thumbnail. The gallery image always stays untouched. Needed for the WebUI's 'Use Marked Meteors' option, which links the marked thumbnail without checking that it exists.",
+            "type": {"fieldtype": "checkbox"}
+        },
         "save_vetoed": {
             "required": "false",
             "description": "Save Rejected-Candidate Crops",
@@ -222,8 +238,8 @@ metaData = {
         },
         "save_debug": {
             "required": "false",
-            "description": "Save Marked Copy",
-            "help": "Additionally save a copy with brackets AROUND the streak (never over it). Gallery image always stays untouched.",
+            "description": "Save Marked Copy (legacy)",
+            "help": "Superseded by 'Save Marked Copy' above; kept so an older saved config still forces the marked copy on.",
             "tab": "Debug",
             "type": {"fieldtype": "checkbox"}
         },
@@ -309,6 +325,18 @@ metaData = {
                 "changes": [
                     "Bright-star scintillation veto (star_filter, default on): reject a short streak whose centre sits within star_radius px (default 16) of a projected catalogue star brighter than star_maglim (default 5.0). On clear nights a bright star twinkles brighter between frames, producing a compact frame-difference blob at the star's position that mimics a meteor's appear/vanish signature. The star positions come from a bundled Hipparcos subset (stars.json, Vmag<6) projected with the fisheye calibration for the frame's time; long/bright fireballs (>130 px) are exempt. Silently skipped if allsky_fisheye.py / calibration.json / stars.json are absent. Logged as reason 'star' in meteors_vetoed.json.",
                     "Refined the fisheye calibration against a deep Hipparcos catalogue seeded from the previous fit (RMS ~4 px over 317 stars across 3 clear-night frames); tightened a1, which had pushed mid/edge stars ~15 px outward and would have blunted the star veto."
+                ]
+            }
+        ],
+        "v0.5.0": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Allsky WebUI meteor browsing (save_webui, default on): every saved meteor is additionally filed under images/<day>/meteors/ with its thumbnail, marked copy and a per-image json sidecar, which is the layout the WebUI's 'Meteors' page (AllskyTeam/allsky#5227) browses. The website folder is still written unchanged — the remote upload and the per-night charts keep reading the rolling meteors.json there.",
+                    "Per-image json sidecar meteors-<stamp>.json next to each image, holding just that image's streaks. Same fields as the rolling log (length, angle, elong, peak, p1, p2, frag_n, frag_ext, showers, radiant), because the WebUI reads them one file at a time rather than scanning a rolling log.",
+                    "Marked copy promoted out of Debug (save_marked, default on) and its thumbnail is now written too: the WebUI's 'Use Marked Meteors' option links thumbnails/<name>-marked.jpg without checking that it exists, so a missing one renders as a broken image. save_debug is kept as a legacy alias that still forces the marked copy on.",
+                    "The day folder is pinned when a candidate is stashed, not when it is confirmed a frame later, so a meteor caught either side of the DATE_NAME rollover cannot land in the wrong night's folder."
                 ]
             }
         ]
@@ -749,8 +777,65 @@ def _safeRemove(path):
         pass
 
 
-def _saveMeteor(img_path, stamp, streaks, outdir, thumbdir, save_debug):
-    """Save the pristine true-colour meteor image + thumbnail + json log. Returns 1/0."""
+def _writeJson(path, data):
+    try:
+        with open(path, "w") as fh:
+            json.dump(data, fh, default=float)
+    except Exception as ex:
+        s.log(1, f"WARNING: meteordetect could not write {os.path.basename(path)}: {ex}")
+
+
+def _currentDay():
+    """Allsky's day-folder name. saveImage.sh exports DATE_NAME immediately before it runs
+    flow-runner.py and that name already carries the 12-hour offset, so it stays on the
+    evening's date after midnight — which is exactly the folder the images went into."""
+    day = str(s.getEnvironmentVariable("DATE_NAME") or "")
+    if re.fullmatch(r"\d{8}", day):
+        return day
+    return time.strftime("%Y%m%d", time.localtime(time.time() - 12 * 3600))
+
+
+def _webUIDayDir(day):
+    """images/<day>/meteors — the folder the Allsky WebUI 'Meteors' page browses."""
+    if not day:
+        return None
+    images = s.getEnvironmentVariable("ALLSKY_IMAGES") or \
+        os.path.join(s.getEnvironmentVariable("ALLSKY_HOME") or os.path.expanduser("~/allsky"), "images")
+    return os.path.join(images, day, "meteors")
+
+
+def _copyToWebUI(day, stamp, fname, outdir, thumbdir, entries, save_marked):
+    """Mirror one saved meteor into images/<day>/meteors/ for the WebUI browser.
+    Copies the already-encoded files rather than re-encoding them. Never raises."""
+    try:
+        daydir = _webUIDayDir(day)
+        if not daydir:
+            return
+        daythumbs = os.path.join(daydir, "thumbnails")
+        os.makedirs(daythumbs, exist_ok=True)
+        names = [fname]
+        if save_marked:
+            names.append(f"meteors-{stamp}-marked.jpg")
+        for name in names:
+            for src, dst in ((os.path.join(outdir, name), os.path.join(daydir, name)),
+                             (os.path.join(thumbdir, name), os.path.join(daythumbs, name))):
+                if os.path.isfile(src):
+                    shutil.copy2(src, dst)
+        _writeJson(os.path.join(daydir, f"meteors-{stamp}.json"), entries)
+    except Exception as ex:
+        s.log(1, f"WARNING: meteordetect could not populate the WebUI folder for {day}: {ex}")
+
+
+def _saveMeteor(img_path, stamp, streaks, outdir, thumbdir, save_marked,
+                day=None, save_webui=True):
+    """Save the pristine true-colour meteor image + thumbnail + json. Returns 1/0.
+
+    Two destinations, because two consumers read different layouts:
+      * outdir / thumbdir        - the website folder; the remote upload and the
+                                   per-night charts read the rolling meteors.json there
+      * images/<day>/meteors/    - what the Allsky WebUI 'Meteors' page browses; it wants
+                                   one json sidecar per image, not a rolling log
+    """
     img = cv2.imread(img_path)
     if img is None:
         return 0
@@ -759,31 +844,42 @@ def _saveMeteor(img_path, stamp, streaks, outdir, thumbdir, save_debug):
     cv2.imwrite(os.path.join(outdir, fname), img)                       # GALLERY: untouched colours
     cv2.imwrite(os.path.join(thumbdir, fname),
                 cv2.resize(img, (0, 0), fx=0.25, fy=0.25))
-    if save_debug:
+    if save_marked:
         marked = img.copy()
         for m in streaks:
             _drawBrackets(marked, m)                                    # brackets AROUND, never over
-        cv2.imwrite(os.path.join(outdir, f"meteors-{stamp}-marked.jpg"), marked)
+        marked_name = f"meteors-{stamp}-marked.jpg"
+        cv2.imwrite(os.path.join(outdir, marked_name), marked)
+        # the WebUI links the marked THUMBNAIL without checking it exists, so write it too
+        cv2.imwrite(os.path.join(thumbdir, marked_name),
+                    cv2.resize(marked, (0, 0), fx=0.25, fy=0.25))
+
+    showers = _activeShowers(stamp)
+    entries = []
+    for m in streaks:
+        radiant = _matchRadiant(m["p1"], m["p2"], showers)   # geometric attribution
+        entries.append({"time": stamp, "file": fname,
+                        "length": round(m["len"], 1), "angle": round(m["ang"], 1),
+                        "elong": round(m["elong"], 1), "peak": m.get("peak"),
+                        "cx": round(m["cx"], 1), "cy": round(m["cy"], 1),
+                        "p1": [round(m["p1"][0], 1), round(m["p1"][1], 1)],
+                        "p2": [round(m["p2"][0], 1), round(m["p2"][1], 1)],
+                        "frag_n": m.get("frag_n", 0), "frag_ext": round(m.get("frag_ext", 0.0), 1),
+                        "showers": showers, "radiant": radiant})
+
+    # per-image sidecar: just this image's streaks, which is what the WebUI browser reads
+    _writeJson(os.path.join(outdir, f"meteors-{stamp}.json"), entries)
+
     logpath = os.path.join(outdir, "meteors.json")
     try:
         log = json.load(open(logpath)) if os.path.exists(logpath) else []
     except Exception:
         log = []
-    showers = _activeShowers(stamp)
-    for m in streaks:
-        radiant = _matchRadiant(m["p1"], m["p2"], showers)   # geometric attribution
-        log.append({"time": stamp, "file": fname,
-                    "length": round(m["len"], 1), "angle": round(m["ang"], 1),
-                    "elong": round(m["elong"], 1), "peak": m.get("peak"),
-                    "cx": round(m["cx"], 1), "cy": round(m["cy"], 1),
-                    "p1": [round(m["p1"][0], 1), round(m["p1"][1], 1)],
-                    "p2": [round(m["p2"][0], 1), round(m["p2"][1], 1)],
-                    "frag_n": m.get("frag_n", 0), "frag_ext": round(m.get("frag_ext", 0.0), 1),
-                    "showers": showers, "radiant": radiant})
-    try:
-        json.dump(log[-2000:], open(logpath, "w"))
-    except Exception as ex:
-        s.log(1, f"WARNING: meteordetect could not write log: {ex}")
+    log.extend(entries)
+    _writeJson(logpath, log[-2000:])
+
+    if save_webui:
+        _copyToWebUI(day, stamp, fname, outdir, thumbdir, entries, save_marked)
     return 1
 
 
@@ -857,7 +953,10 @@ def meteordetect(params, event):
     star_maglim = s.asfloat(params.get("star_maglim", 5.0))
     upload_remote = _truthy(params.get("upload_remote", True))
     save_vetoed = _truthy(params.get("save_vetoed", True))
-    save_debug = _truthy(params.get("save_debug", False))
+    save_webui = _truthy(params.get("save_webui", True))
+    # save_debug is the old name for the same thing; honour it so an existing config
+    # that switched it on keeps getting marked copies.
+    save_marked = _truthy(params.get("save_marked", True)) or _truthy(params.get("save_debug", False))
     debug = _truthy(params.get("debug", False))
 
     outdir = params["outputdir"].strip()
@@ -1011,7 +1110,8 @@ def meteordetect(params, event):
             keep.append(cand)
         if keep:
             n = _saveMeteor(entry["img_path"], entry["stamp"], keep,
-                            outdir, thumbdir, save_debug)
+                            outdir, thumbdir, save_marked,
+                            entry.get("day") or _currentDay(), save_webui)
             saved += n
             if n and upload_remote:
                 _uploadRemote(outdir, thumbdir, f"meteors-{entry['stamp']}.jpg")
@@ -1034,7 +1134,10 @@ def meteordetect(params, event):
         stamp = time.strftime("%Y%m%d%H%M%S")
         stash = os.path.join(s.ALLSKY_TMP, f"allsky_meteordetect_pending_{stamp}.jpg")
         cv2.imwrite(stash, s.image)          # stash TRUE-COLOUR frame for later save
-        new_pending.append({"img_path": stash, "stamp": stamp, "streaks": new_cands})
+        # pin the day folder now: the candidate is only confirmed on a later frame, which
+        # may already be in the next DATE_NAME period
+        new_pending.append({"img_path": stash, "stamp": stamp,
+                            "day": _currentDay(), "streaks": new_cands})
 
     # remember this frame's streak positions for the recurrence veto (rolling, pruned)
     hotspots.extend([round(st_["cx"], 1), round(st_["cy"], 1), now_t] for st_ in streaks)
