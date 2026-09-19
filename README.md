@@ -195,6 +195,24 @@ The day folder follows Allsky's own convention: it is the night's *evening* date
 meteor at 03:15 on the 19th therefore lands in `images/20260918/` as
 `meteors-20260919031514.jpg` — exactly like Allsky's own `image-*.jpg` files.
 
+### Backfilling meteors detected before v0.5.0
+
+Older detections only exist flat in the website folder, so the WebUI page stays
+empty until the next meteor. `tools/backfill_webui.py` files them into the day
+folders once:
+
+```bash
+tools/backfill_webui.py --dry-run     # report what would happen
+tools/backfill_webui.py               # do it
+```
+
+It copies out of the website folder and never modifies it, builds each sidecar
+from the matching entries in the rolling `meteors.json`, and **redraws** the
+marked copy from the logged `p1`/`p2` endpoints — pre-v0.5.0 the marked copy was
+off by default, so for most historical meteors there is no file to copy. Nights
+whose images were long since purged get their day folder recreated holding only
+meteors; pass `--existing-days-only` to skip those instead.
+
 ### Why true colour matters
 
 Meteor colour encodes composition — green from magnesium/oxygen, yellow/orange from
