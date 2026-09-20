@@ -52,26 +52,44 @@ Key points:
 - Allsky `v2023.05.01_04` or later — that is the module API this needs, **not** a
   release that ships it. This is a third-party module: it is not bundled with Allsky
   or the official [allsky-modules](https://github.com/AllskyTeam/allsky-modules)
-  collection, so the Module Manager will not list it until you install it (below).
-- Tested on Allsky `v2024.12.06_06`. Not yet tested on the 2025 branch — if it does
-  not appear there after installing, please
+  collection, so no installer dialog in the WebUI will offer it — you copy it in by
+  hand (below).
+- Tested on Allsky `v2024.12.06_06`. Not yet run on the 2025 branch, though the
+  2025 Module Manager's metadata parser has been checked against this module. If
+  something does not work there, please
   [open an issue](https://github.com/benhartwich/allsky-meteordetect/issues).
 - Python packages already present in the Allsky virtualenv: `opencv-python`, `numpy`.
 
 ## Installation
 
-Copy the module into your Allsky modules folder:
+> **Not in the Module *package* Manager.** That dialog installs from the official
+> [allsky-modules](https://github.com/AllskyTeam/allsky-modules) collection, and this
+> module is not part of it — filtering there for “meteor” will always come up empty.
+> Copy the file in by hand instead, then add it to a flow.
+
+**1. Copy the module in.** Where it goes depends on your Allsky version:
 
 ```bash
+# Allsky 2025 and later - the folder for your own modules, searched first
+mkdir -p ~/allsky/config/myFiles/modules
+cp allsky_meteordetect.py ~/allsky/config/myFiles/modules/
+
+# Allsky 2024 and earlier - that folder does not exist yet
 cp allsky_meteordetect.py ~/allsky/scripts/modules/
 ```
 
-or drop it into a clone of
-[allsky-modules](https://github.com/AllskyTeam/allsky-modules) and run its
-installer. Then open the Module Manager in the Allsky WebUI, pick the **night**
-flow and add **“Meteor Detection”**. Place it directly after *Load Image*: the module
-saves the frame as it stands at its position in the flow, so anything placed before
-it — the overlay, for instance — ends up in the saved meteor images.
+On 2025 both locations work, but `scripts/modules/` is Allsky's own folder and an
+upgrade may overwrite what you put there; `config/myFiles/modules/` is yours and takes
+precedence. You can also drop the file into a clone of
+[allsky-modules](https://github.com/AllskyTeam/allsky-modules) and run its installer.
+
+**2. Add it to the night flow.** Open the Module Manager in the WebUI and switch to the
+**night** flow — the module declares `"events": ["night"]`, so it deliberately does not
+appear under day. **“Meteor Detection”** is then in the list of available modules.
+
+**3. Put it directly after *Load Image*.** The module saves the frame as it stands at its
+position in the flow, so anything running before it — the overlay, for instance — ends
+up in the saved meteor images.
 
 ## Building a detection mask
 
