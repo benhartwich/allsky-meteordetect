@@ -338,6 +338,13 @@ metaData = {
                     "Marked copy promoted out of Debug (save_marked, default on) and its thumbnail is now written too: the WebUI's 'Use Marked Meteors' option links thumbnails/<name>-marked.jpg without checking that it exists, so a missing one renders as a broken image. save_debug is kept as a legacy alias that still forces the marked copy on.",
                     "The day folder is pinned when a candidate is stashed, not when it is confirmed a frame later, so a meteor caught either side of the DATE_NAME rollover cannot land in the wrong night's folder."
                 ]
+            },
+            {
+                "author": "Carlos Gil",
+                "authorurl": "https://github.com/ea1ii",
+                "changes": [
+                    "Original idea and first implementation of saving into images/<day>/meteors/ with a per-image json, in PR #1. This release keeps that layout; it derives the day folder from DATE_NAME rather than from the file name, so a meteor after midnight stays with the night it belongs to."
+                ]
             }
         ]
     }
