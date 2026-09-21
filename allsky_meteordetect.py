@@ -27,9 +27,9 @@ import cv2
 import numpy as np
 
 metaData = {
-    "name": "Meteor Detection",
+    "name": "Meteor Detection (temporal)",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.5.2",
+    "version": "v0.5.3",
     "events": [
         "night"
     ],
@@ -364,6 +364,15 @@ metaData = {
                 "changes": [
                     "WebUI thumbnail folder renamed to images/<day>/meteorsthumbnails/ (plural, like the day's own thumbnails/), as settled on AllskyTeam/allsky#5227; the WebUI's meteors.php and functions.php read that name. v0.5.1's meteorsthumbnail/ was a guess at the naming.",
                     "tools/backfill_webui.py moves thumbnails from both earlier locations - meteors/thumbnails/ (v0.5.0) and meteorsthumbnail/ (v0.5.1)."
+                ]
+            }
+        ],
+        "v0.5.3": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Display name is now 'Meteor Detection (temporal)'. Allsky's built-in allsky_meteor.py is also called 'Meteor Detection', so the Module Manager listed two identical entries and users could not tell which one they had added."
                 ]
             }
         ]

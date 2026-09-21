@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.5.3
+
+- **Display name is now “Meteor Detection (temporal)”.** Allsky's built-in
+  `allsky_meteor.py` is also called “Meteor Detection”, so the Module Manager listed two
+  identical entries — a user on
+  [#2](https://github.com/benhartwich/allsky-meteordetect/issues/2) could not tell which
+  one they had installed. The README's installation steps now name both.
+
 ## v0.5.2
 
 - **WebUI thumbnail folder is now `images/<day>/meteorsthumbnails/`** — plural, like

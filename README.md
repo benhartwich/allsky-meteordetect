@@ -85,7 +85,10 @@ precedence. You can also drop the file into a clone of
 
 **2. Add it to the night flow.** Open the Module Manager in the WebUI and switch to the
 **night** flow — the module declares `"events": ["night"]`, so it deliberately does not
-appear under day. **“Meteor Detection”** is then in the list of available modules.
+appear under day. **“Meteor Detection (temporal)”** is then in the list of available modules.
+Allsky's own single-frame module is called plain *“Meteor Detection”* — that is not this
+one. Running both is possible but redundant; if you do, keep this one directly after
+*Load Image* so the other's debug annotations never end up in the saved meteor images.
 
 **3. Put it directly after *Load Image*.** The module saves the frame as it stands at its
 position in the flow, so anything running before it — the overlay, for instance — ends
