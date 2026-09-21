@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.5.2
+
+- **WebUI thumbnail folder is now `images/<day>/meteorsthumbnails/`** — plural, like
+  the day's own `thumbnails/`, as settled on
+  [AllskyTeam/allsky#5227](https://github.com/AllskyTeam/allsky/pull/5227). The WebUI's
+  `meteors.php` and `functions.php` read that name; v0.5.1's `meteorsthumbnail/` had
+  followed the singular `keogramthumbnail/` pattern instead.
+- **`tools/backfill_webui.py` moves thumbnails from both earlier locations**,
+  `meteors/thumbnails/` (v0.5.0) and `meteorsthumbnail/` (v0.5.1). Re-run it once after
+  upgrading.
+
 ## v0.5.1
 
 - **WebUI thumbnails move to `images/<day>/meteorsthumbnail/`**, a sibling of

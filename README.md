@@ -215,18 +215,17 @@ is on) — the layout the WebUI's **Meteors** page reads:
 images/<day>/meteors/meteors-<timestamp>.jpg
 images/<day>/meteors/meteors-<timestamp>-marked.jpg     (Save Marked Copy)
 images/<day>/meteors/meteors-<timestamp>.json
-images/<day>/meteorsthumbnail/meteors-<timestamp>.jpg
-images/<day>/meteorsthumbnail/meteors-<timestamp>-marked.jpg
+images/<day>/meteorsthumbnails/meteors-<timestamp>.jpg
+images/<day>/meteorsthumbnails/meteors-<timestamp>-marked.jpg
 ```
 
 - **`meteors-<timestamp>.json`** — a sidecar holding *only that image's* streaks
   (same fields as the rolling log). The WebUI reads one file per image rather than
   scanning a rolling log, so the sidecar exists alongside it, not instead of it.
-- **Thumbnails sit in the sibling `meteorsthumbnail/`**, not in a `thumbnails/`
-  subfolder. That is how Allsky 2025 stores a day's keogram and startrails
-  thumbnails (`keogramthumbnail/`, `startrailsthumbnail/`), and where the WebUI
-  looks. The website folder above keeps its own `meteors/thumbnails/`, which its
-  gallery page expects.
+- **Thumbnails sit in the sibling `meteorsthumbnails/`**, not in a `thumbnails/`
+  subfolder of `meteors/` — that is where the WebUI's Meteors page reads them. The
+  website folder above keeps its own `meteors/thumbnails/`, which its gallery page
+  expects.
 
 The day folder follows Allsky's own convention: it is the night's *evening* date
 (`DATE_NAME`, 12-hour offset), while the file name carries the real timestamp. A
@@ -251,9 +250,9 @@ off by default, so for most historical meteors there is no file to copy. Nights
 whose images were long since purged get their day folder recreated holding only
 meteors; pass `--existing-days-only` to skip those instead.
 
-Run it again after upgrading from v0.5.0: that version put the WebUI thumbnails in
-`images/<day>/meteors/thumbnails/`, and the tool moves them into
-`images/<day>/meteorsthumbnail/`. Add `--no-marked` if you do not want marked
+Run it again after upgrading from v0.5.0 or v0.5.1: those put the WebUI thumbnails
+in `images/<day>/meteors/thumbnails/` and `images/<day>/meteorsthumbnail/`
+respectively, and the tool moves them into `images/<day>/meteorsthumbnails/`. Add `--no-marked` if you do not want marked
 copies redrawn for meteors that never had one.
 
 Keep in mind that Allsky's *Days To Keep* setting removes whole day folders,

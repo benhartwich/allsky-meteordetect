@@ -15,11 +15,11 @@ night's day folder:
                                           streak endpoints if never saved
   meteors/meteors-<stamp>.json            sidecar with this image's streaks,
                                           taken from the rolling meteors.json
-  meteorsthumbnail/meteors-<stamp>*.jpg   thumbnails, copied or generated
+  meteorsthumbnails/meteors-<stamp>*.jpg  thumbnails, copied or generated
 
-Thumbnails sit in a sibling folder rather than a meteors/thumbnails/ subfolder,
-the way Allsky 2025 stores keogram and startrails thumbnails. Anything an older
-version left in meteors/thumbnails/ is moved across.
+Thumbnails sit in the sibling meteorsthumbnails/, where the WebUI reads them.
+Anything an older version left in meteors/thumbnails/ (v0.5.0) or in
+meteorsthumbnail/ (v0.5.1) is moved across.
 
 The day folder follows Allsky's own convention: the night's *evening* date, i.e.
 the timestamp shifted back 12 hours, matching ``DATE_NAME`` in saveImage.sh. A
@@ -142,14 +142,19 @@ def _marked(module, image, entries, dst, thumbDir, force, dry, stats):
     return True
 
 
+# Where earlier versions put the WebUI thumbnails, relative to images/<day>/.
+OLD_THUMB_DIRS = (os.path.join("meteors", "thumbnails"),   # v0.5.0
+                  "meteorsthumbnail")                      # v0.5.1
+
+
 def _migrateOldThumbnails(images, thumbDirName, dry):
-    """Move thumbnails an older version left in images/<day>/meteors/thumbnails/
-    into the sibling images/<day>/<thumbDirName>/, then drop the emptied folder.
-    A file already present at the destination wins; the old copy is removed."""
+    """Move thumbnails an older version left in one of OLD_THUMB_DIRS into
+    images/<day>/<thumbDirName>/, then drop the emptied folder. A file already
+    present at the destination wins; the old copy is removed."""
     moved = 0
-    for day in sorted(os.listdir(images)):
-        old = os.path.join(images, day, "meteors", "thumbnails")
-        if not os.path.isdir(old):
+    for day, oldRel in ((d, o) for d in sorted(os.listdir(images)) for o in OLD_THUMB_DIRS):
+        old = os.path.join(images, day, oldRel)
+        if not os.path.isdir(old) or oldRel == thumbDirName:
             continue
         new = os.path.join(images, day, thumbDirName)
         if not dry:
@@ -282,7 +287,7 @@ def main():
     if stats["skipped_days"]:
         print(f"skipped (no day folder): {stats['skipped_days']}")
     if moved:
-        print(f"thumbnails moved  : {moved}  (meteors/thumbnails/ -> {module.WEBUI_THUMB_DIR}/)")
+        print(f"thumbnails moved  : {moved}  (into {module.WEBUI_THUMB_DIR}/)")
     print(f"files copied      : {stats['copied']}")
     print(f"thumbnails made   : {stats['generated']}")
     print(f"marked redrawn    : {stats['redrawn']}")
