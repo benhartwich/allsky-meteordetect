@@ -131,8 +131,8 @@ fail because tree interiors are smooth and averaging washes out their texture.
 | Reject Dashed Trails | on | Reject a long streak broken into many bright/dark segments — a tumbling satellite or strobing aircraft |
 | Dash Segments | `10` | Segment count that marks a streak as dashed (real meteor ≤5, a dashed satellite scored 19) |
 | Dash Min Length | `120` px | Only test streaks at least this long for a dashed pattern; short meteors are exempt |
-| Reject Fragmented Trails (arm) | off | Arm the fragmented-trail veto. **Off = shadow mode**: the collinear-fragment metric is measured and logged (`frag_n`/`frag_ext`, `frag-shadow`) but nothing is vetoed. Turn on only after real meteors confirm they score 0 |
-| Fragment Segments | `3` | Collinear diff fragments beyond a streak's ends that mark it as the head of a fragmented dashed trail (real meteor 0, validated glint 3) |
+| Reject Fragmented Trails (arm) | off | Arm the fragmented-trail veto. **Off = shadow mode**: the collinear-fragment metric is measured and logged (`frag_n`/`frag_ext`, `frag-shadow`) but nothing is vetoed. Before arming, check what your real meteors score — see below |
+| Fragment Segments | `5` | Collinear diff fragments beyond a streak's ends that mark it as the head of a fragmented dashed trail. Real meteors are **not** always 0: here they reached 4, satellite trails 3–11 — see below |
 | Fragment Min Length | `120` px | Only test streaks at least this long for a collinear fragmented tail |
 | Reject Satellites/Aircraft | on | Discard progressing tracks |
 | Scintillation Guard | on | On very clear nights, if a frame has more than *Scintillation Max* streaks keep only a clearly dominant one |
@@ -293,6 +293,31 @@ Meteor colour encodes composition — green from magnesium/oxygen, yellow/orange
 sodium/iron, blue-white for fast trails. The gallery image is therefore never
 painted over; the optional marked copy draws brackets *around* the streak, never on
 it.
+
+### Arming the fragmented-trail veto
+
+The veto ships in shadow mode: it measures `frag_n` on every detection and writes it to
+`meteors.json`, but rejects nothing. That record is what tells you whether arming it is
+safe. On this camera, two months of saved detections (107) gave:
+
+| frag_n | detections | inspected by eye |
+|---|---|---|
+| 0–2 | 96 | — |
+| 3 | 7 | 4 satellite trails or artefacts, 1 unclear, **2 real meteors** |
+| 4 | 2 | 1 dawn contrail, **1 real meteor** |
+| 6, 11 | 2 | both satellite trails |
+
+So at the original threshold of 3 it would have removed seven false detections and three
+real meteors; the scores simply overlap. At **5** it removes the two clearest satellite
+trails and no meteor, which is why `frag_min` now defaults to 5. Check your own record
+before arming — this lists every long detection with its score:
+
+```bash
+python3 -c 'import json, os; [print(e["time"], "frag_n=%s" % e["frag_n"], "len=%d" % e["length"]) for e in json.load(open(os.path.expanduser("~/allsky/html/allsky/meteors/meteors.json"))) if e.get("frag_n", 0) >= 3 and e["length"] >= 120]'
+```
+
+and `tools/replay_night.py <night> --set frag_filter=true` shows what it would have
+rejected on a saved night.
 
 ## Testing without waiting for a clear night
 

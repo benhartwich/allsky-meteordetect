@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.5.6
+
+- **Fragment Segments (`frag_min`) now defaults to 5, not 3.** The fragmented-trail veto
+  has run in shadow mode here for two months, recording `frag_n` for every saved
+  detection. Of 107, eleven reached the old threshold of 3. Inspected by eye: seven were
+  satellite trails or artefacts, one was unclear — and **three were real meteors**,
+  scoring 3, 4 and 3. The assumption that a real meteor scores 0 does not hold. At 5 the
+  veto catches the two clearest satellite trails (6 and 11) and no real meteor.
+- The veto is still **off** by default; this only makes turning it on safe. README has a
+  new section with the numbers and a one-liner to check your own record first.
+
 ## v0.5.5
 
 - **Streak finding is about 240× faster.** For every connected component in the
