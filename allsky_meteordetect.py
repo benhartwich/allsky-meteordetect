@@ -29,7 +29,7 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.5.0",
+    "version": "v0.5.1",
     "events": [
         "night"
     ],
@@ -221,7 +221,7 @@ metaData = {
         "save_webui": {
             "required": "false",
             "description": "Browse in the Allsky WebUI",
-            "help": "Also file each meteor under images/<day>/meteors/ (image, thumbnail, marked copy and a per-meteor json sidecar) so the Allsky WebUI 'Meteors' page can browse it day by day. The website folder above is still written either way — the remote upload and the per-night charts read that one.",
+            "help": "Also file each meteor under images/<day>/meteors/ (image, marked copy and a per-meteor json sidecar, with the thumbnails in the sibling images/<day>/meteorsthumbnail/) so the Allsky WebUI 'Meteors' page can browse it day by day. The website folder above is still written either way — the remote upload and the per-night charts read that one.",
             "type": {"fieldtype": "checkbox"}
         },
         "save_marked": {
@@ -344,6 +344,16 @@ metaData = {
                 "authorurl": "https://github.com/ea1ii",
                 "changes": [
                     "Original idea and first implementation of saving into images/<day>/meteors/ with a per-image json, in PR #1. This release keeps that layout; it derives the day folder from DATE_NAME rather than from the file name, so a meteor after midnight stays with the night it belongs to."
+                ]
+            }
+        ],
+        "v0.5.1": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "WebUI thumbnails move from images/<day>/meteors/thumbnails/ to the sibling images/<day>/meteorsthumbnail/, matching how Allsky 2025 stores keogram and startrails thumbnails (keogramthumbnail/, startrailsthumbnail/) and where the WebUI's Meteors page looks for them. Requested on AllskyTeam/allsky#5227. The website meteors/thumbnails/ folder is unchanged: the website gallery and the remote upload read that one.",
+                    "tools/backfill_webui.py files thumbnails into the new folder too, and moves any left in the old one."
                 ]
             }
         ]
@@ -802,6 +812,12 @@ def _currentDay():
     return time.strftime("%Y%m%d", time.localtime(time.time() - 12 * 3600))
 
 
+# Allsky 2025 keeps a day's thumbnails in a sibling folder named after the content
+# folder -- keogram/ + keogramthumbnail/, startrails/ + startrailsthumbnail/ -- rather
+# than in a thumbnails/ subfolder, and the WebUI looks for them there.
+WEBUI_THUMB_DIR = "meteorsthumbnail"
+
+
 def _webUIDayDir(day):
     """images/<day>/meteors — the folder the Allsky WebUI 'Meteors' page browses."""
     if not day:
@@ -812,13 +828,15 @@ def _webUIDayDir(day):
 
 
 def _copyToWebUI(day, stamp, fname, outdir, thumbdir, entries, save_marked):
-    """Mirror one saved meteor into images/<day>/meteors/ for the WebUI browser.
+    """Mirror one saved meteor into images/<day>/ for the WebUI browser: the images and
+    json into meteors/, the thumbnails into the sibling meteorsthumbnail/.
     Copies the already-encoded files rather than re-encoding them. Never raises."""
     try:
         daydir = _webUIDayDir(day)
         if not daydir:
             return
-        daythumbs = os.path.join(daydir, "thumbnails")
+        os.makedirs(daydir, exist_ok=True)
+        daythumbs = os.path.join(os.path.dirname(daydir), WEBUI_THUMB_DIR)
         os.makedirs(daythumbs, exist_ok=True)
         names = [fname]
         if save_marked:
@@ -840,7 +858,8 @@ def _saveMeteor(img_path, stamp, streaks, outdir, thumbdir, save_marked,
     Two destinations, because two consumers read different layouts:
       * outdir / thumbdir        - the website folder; the remote upload and the
                                    per-night charts read the rolling meteors.json there
-      * images/<day>/meteors/    - what the Allsky WebUI 'Meteors' page browses; it wants
+      * images/<day>/meteors/    - what the Allsky WebUI 'Meteors' page browses (thumbnails
+                                   in the sibling meteorsthumbnail/); it wants
                                    one json sidecar per image, not a rolling log
     """
     img = cv2.imread(img_path)

@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.1
+
+- **WebUI thumbnails move to `images/<day>/meteorsthumbnail/`**, a sibling of
+  `meteors/` rather than a `meteors/thumbnails/` subfolder. Allsky 2025 stores a
+  day's keogram and startrails thumbnails the same way (`keogramthumbnail/`,
+  `startrailsthumbnail/`), and the WebUI's Meteors page looks for them there —
+  requested on [AllskyTeam/allsky#5227](https://github.com/AllskyTeam/allsky/pull/5227).
+  The website `meteors/thumbnails/` folder is unchanged: the website gallery and
+  the remote upload read that one.
+- **`tools/backfill_webui.py` migrates.** It writes thumbnails to the new folder and
+  moves any a v0.5.0 install left in `images/<day>/meteors/thumbnails/`, removing
+  the emptied folder. Re-run it once after upgrading.
+
 ## v0.5.0
 
 Make the detections browsable in the **Allsky WebUI**, alongside the existing website

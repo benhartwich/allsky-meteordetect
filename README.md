@@ -208,13 +208,25 @@ charts):
   attribution if calibrated, `frag_n` = collinear-fragment shadow metric).
 - Optional remote-website upload of each hit.
 
-**Allsky WebUI folder** (`images/<day>/meteors/`, when *Browse in the Allsky WebUI*
+**Allsky WebUI folder** (under `images/<day>/`, when *Browse in the Allsky WebUI*
 is on) — the layout the WebUI's **Meteors** page reads:
 
-- the same image, thumbnail and marked copy, filed under the night's day folder;
+```
+images/<day>/meteors/meteors-<timestamp>.jpg
+images/<day>/meteors/meteors-<timestamp>-marked.jpg     (Save Marked Copy)
+images/<day>/meteors/meteors-<timestamp>.json
+images/<day>/meteorsthumbnail/meteors-<timestamp>.jpg
+images/<day>/meteorsthumbnail/meteors-<timestamp>-marked.jpg
+```
+
 - **`meteors-<timestamp>.json`** — a sidecar holding *only that image's* streaks
   (same fields as the rolling log). The WebUI reads one file per image rather than
   scanning a rolling log, so the sidecar exists alongside it, not instead of it.
+- **Thumbnails sit in the sibling `meteorsthumbnail/`**, not in a `thumbnails/`
+  subfolder. That is how Allsky 2025 stores a day's keogram and startrails
+  thumbnails (`keogramthumbnail/`, `startrailsthumbnail/`), and where the WebUI
+  looks. The website folder above keeps its own `meteors/thumbnails/`, which its
+  gallery page expects.
 
 The day folder follows Allsky's own convention: it is the night's *evening* date
 (`DATE_NAME`, 12-hour offset), while the file name carries the real timestamp. A
@@ -238,6 +250,16 @@ marked copy from the logged `p1`/`p2` endpoints — pre-v0.5.0 the marked copy w
 off by default, so for most historical meteors there is no file to copy. Nights
 whose images were long since purged get their day folder recreated holding only
 meteors; pass `--existing-days-only` to skip those instead.
+
+Run it again after upgrading from v0.5.0: that version put the WebUI thumbnails in
+`images/<day>/meteors/thumbnails/`, and the tool moves them into
+`images/<day>/meteorsthumbnail/`. Add `--no-marked` if you do not want marked
+copies redrawn for meteors that never had one.
+
+Keep in mind that Allsky's *Days To Keep* setting removes whole day folders,
+meteors included. The website folder follows the separate, usually much longer
+*Days To Keep on Local Website*, so it stays the complete record — and the source
+this tool can always refill from.
 
 ### Why true colour matters
 

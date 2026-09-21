@@ -10,12 +10,16 @@ the page is not empty until the next detection.
 For each ``meteors-<stamp>.jpg`` in the website folder it writes, under the
 night's day folder:
 
-  meteors-<stamp>.jpg                     copied
-  thumbnails/meteors-<stamp>.jpg          copied, or generated if missing
-  meteors-<stamp>-marked.jpg (+ thumb)    copied, or redrawn from the logged
+  meteors/meteors-<stamp>.jpg             copied
+  meteors/meteors-<stamp>-marked.jpg      copied, or redrawn from the logged
                                           streak endpoints if never saved
-  meteors-<stamp>.json                    sidecar with this image's streaks,
+  meteors/meteors-<stamp>.json            sidecar with this image's streaks,
                                           taken from the rolling meteors.json
+  meteorsthumbnail/meteors-<stamp>*.jpg   thumbnails, copied or generated
+
+Thumbnails sit in a sibling folder rather than a meteors/thumbnails/ subfolder,
+the way Allsky 2025 stores keogram and startrails thumbnails. Anything an older
+version left in meteors/thumbnails/ is moved across.
 
 The day folder follows Allsky's own convention: the night's *evening* date, i.e.
 the timestamp shifted back 12 hours, matching ``DATE_NAME`` in saveImage.sh. A
@@ -114,7 +118,7 @@ def _thumbnail(src, dst, force, dry, stats):
     stats["generated"] += 1
 
 
-def _marked(module, image, entries, dst, force, dry, stats):
+def _marked(module, image, entries, dst, thumbDir, force, dry, stats):
     """Redraw the marked copy from the logged streak endpoints. Pre-v0.5.0 the
     marked copy was off by default, so for most historical meteors there is no
     file to copy -- but meteors.json kept p1/p2, which is all the brackets need."""
@@ -132,10 +136,40 @@ def _marked(module, image, entries, dst, force, dry, stats):
         for streak in streaks:
             module._drawBrackets(img, {"p1": streak["p1"], "p2": streak["p2"]})
         cv2.imwrite(dst, img)
-        cv2.imwrite(os.path.join(os.path.dirname(dst), "thumbnails", os.path.basename(dst)),
+        cv2.imwrite(os.path.join(thumbDir, os.path.basename(dst)),
                     cv2.resize(img, (0, 0), fx=0.25, fy=0.25))
     stats["redrawn"] += 1
     return True
+
+
+def _migrateOldThumbnails(images, thumbDirName, dry):
+    """Move thumbnails an older version left in images/<day>/meteors/thumbnails/
+    into the sibling images/<day>/<thumbDirName>/, then drop the emptied folder.
+    A file already present at the destination wins; the old copy is removed."""
+    moved = 0
+    for day in sorted(os.listdir(images)):
+        old = os.path.join(images, day, "meteors", "thumbnails")
+        if not os.path.isdir(old):
+            continue
+        new = os.path.join(images, day, thumbDirName)
+        if not dry:
+            os.makedirs(new, exist_ok=True)
+        for name in sorted(os.listdir(old)):
+            src, dst = os.path.join(old, name), os.path.join(new, name)
+            if not os.path.isfile(src):
+                continue
+            if not dry:
+                if os.path.exists(dst):
+                    os.remove(src)
+                else:
+                    shutil.move(src, dst)
+            moved += 1
+        if not dry:
+            try:
+                os.rmdir(old)            # only succeeds once it is empty
+            except OSError:
+                print(f"  ! left in place, not empty: {old}")
+    return moved
 
 
 def main():
@@ -178,6 +212,8 @@ def main():
     print(f"meteors : {len(names)}"
           f"{'   (DRY RUN -- nothing will be written)' if args.dry_run else ''}\n")
 
+    moved = _migrateOldThumbnails(images, module.WEBUI_THUMB_DIR, args.dry_run)
+
     stats = {"copied": 0, "generated": 0, "redrawn": 0, "skipped": 0,
              "sidecars": 0, "no_metadata": 0, "skipped_days": 0}
     newDays, touchedDays = set(), set()
@@ -187,7 +223,7 @@ def main():
         day = _dayFolder(stamp)
         dayDir = os.path.join(images, day)
         meteorDir = os.path.join(dayDir, "meteors")
-        thumbDir = os.path.join(meteorDir, "thumbnails")
+        thumbDir = os.path.join(dayDir, module.WEBUI_THUMB_DIR)
 
         if not os.path.isdir(dayDir):
             if args.existing_days_only:
@@ -197,6 +233,7 @@ def main():
         touchedDays.add(day)
 
         if not args.dry_run:
+            os.makedirs(meteorDir, exist_ok=True)
             os.makedirs(thumbDir, exist_ok=True)
 
         _copy(os.path.join(website, name), os.path.join(meteorDir, name),
@@ -227,7 +264,8 @@ def main():
                 _thumbnail(srcMarked, dstMarkedThumb, args.force, args.dry_run, stats)
         elif not args.no_marked:
             _marked(module, os.path.join(website, name), entries,
-                    os.path.join(meteorDir, markedName), args.force, args.dry_run, stats)
+                    os.path.join(meteorDir, markedName), thumbDir,
+                    args.force, args.dry_run, stats)
 
         sidecar = os.path.join(meteorDir, f"{base}.json")
         if not os.path.exists(sidecar) or args.force:
@@ -243,6 +281,8 @@ def main():
               "appear in the WebUI day list holding only meteors.")
     if stats["skipped_days"]:
         print(f"skipped (no day folder): {stats['skipped_days']}")
+    if moved:
+        print(f"thumbnails moved  : {moved}  (meteors/thumbnails/ -> {module.WEBUI_THUMB_DIR}/)")
     print(f"files copied      : {stats['copied']}")
     print(f"thumbnails made   : {stats['generated']}")
     print(f"marked redrawn    : {stats['redrawn']}")
