@@ -134,6 +134,10 @@ fail because tree interiors are smooth and averaging washes out their texture.
 | Reject Fragmented Trails (arm) | off | Arm the fragmented-trail veto. **Off = shadow mode**: the collinear-fragment metric is measured and logged (`frag_n`/`frag_ext`, `frag-shadow`) but nothing is vetoed. Before arming, check what your real meteors score — see below |
 | Fragment Segments | `5` | Collinear diff fragments beyond a streak's ends that mark it as the head of a fragmented dashed trail. Real meteors are **not** always 0: here they reached 4, satellite trails 3–11 — see below |
 | Fragment Min Length | `120` px | Only test streaks at least this long for a collinear fragmented tail |
+| Reject Edge Glow (arm) | off | Reject a long, fat streak with **both** ends on the mask border — horizon or lens-rim glow leaking through the feathered edge. **Off = shadow mode**: logged as `edge-shadow`, and every saved meteor records `edge_d`. See below |
+| Edge Margin | `50` px | Both ends closer than this to the mask border count as "on the border" |
+| Edge Glow Max Elongation | `10` | Only fatter streaks can be edge glow (glow here 5–8, real streaks at the border over 10) |
+| Edge Glow Min Length | `80` px | Only longer streaks; spares a short meteor vanishing behind a tree at the border |
 | Reject Satellites/Aircraft | on | Discard progressing tracks |
 | Scintillation Guard | on | On very clear nights, if a frame has more than *Scintillation Max* streaks keep only a clearly dominant one |
 | Scintillation Max | `8` | Streak count that marks a scintillation-dominated frame |
@@ -318,6 +322,29 @@ python3 -c 'import json, os; [print(e["time"], "frag_n=%s" % e["frag_n"], "len=%
 
 and `tools/replay_night.py <night> --set frag_filter=true` shows what it would have
 rejected on a saved night.
+
+### Arming the edge-glow veto
+
+About a quarter of the detections saved here touched the border of the detection mask.
+Looking at them, two kinds were mixed together:
+
+* **Real streaks** — satellites and meteors — *cross* the border: one end sits at it, the
+  other points into the sky, and the trail visibly carries on behind the mask. They are
+  thin: elongation 10 to 47.
+* **Edge glow** — the brightening rim of the fisheye, horizon glow, a lit tree edge — lies
+  *along* the border as a diffuse band. Both ends sit on the border, and it is fat:
+  elongation 5 to 8.
+
+The veto rejects the second kind: at least 80 px long, elongation below 10, and both ends
+within 50 px of the border. Over two months of detections here that matched 9, all
+inspected and all edge glow, and not one real streak. The result did not change between
+50 and 60 px, or between 70 and 80 px minimum length. The length limit is there for one
+case in particular: a short, bright streak that disappears behind a tree right at the
+border, which may well be a meteor and is left alone.
+
+It ships in shadow mode, like the fragmented-trail veto. Every saved meteor records
+`edge_d`, the distance of its farther end from the border, so you can see what it would
+catch on your sky first — or replay a night with `--set edge_filter=true`.
 
 ## Testing without waiting for a clear night
 

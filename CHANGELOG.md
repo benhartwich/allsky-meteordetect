@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.5.7
+
+- **New edge-glow veto** (`edge_filter`, shadow mode by default). Rejects a long, fat
+  streak whose *both* ends sit on the mask border: horizon or lens-rim glow leaking
+  through the feathered edge. About a quarter of the detections saved here touched the
+  border. The real streaks among them cross it — one end inside — and are thin
+  (elongation 10–47); the glow bands lie along it and are fat (5–8).
+- Rule: length ≥ 80 px, elongation < 10, both ends within 50 px of the border. Over two
+  months it matched **9 detections, all inspected, all edge glow, no real streak**, and
+  the result is stable across 50–60 px and 70–80 px. Replaying 2026-09-20 with it
+  switched on removes exactly that night's one edge-glow detection and nothing else.
+- Every saved meteor now records `edge_d`, the distance of its farther end from the
+  border, so you can check your own record before arming it. New settings: Edge Margin,
+  Edge Glow Max Elongation, Edge Glow Min Length.
+
 ## v0.5.6
 
 - **Fragment Segments (`frag_min`) now defaults to 5, not 3.** The fragmented-trail veto

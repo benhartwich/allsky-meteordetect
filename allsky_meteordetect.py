@@ -29,7 +29,7 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection (temporal)",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.5.6",
+    "version": "v0.5.7",
     "events": [
         "night"
     ],
@@ -60,6 +60,10 @@ metaData = {
         "frag_filter": "false",
         "frag_min": "5",
         "frag_min_len": "120",
+        "edge_filter": "false",
+        "edge_margin": "50",
+        "edge_max_elong": "10",
+        "edge_min_len": "80",
         "satellite_filter": "true",
         "scint_guard": "true",
         "scint_max": "8",
@@ -156,6 +160,30 @@ metaData = {
             "description": "Fragment Min Length (px)",
             "help": "Only test streaks at least this long for a collinear fragmented tail. Short streaks are exempt.",
             "type": {"fieldtype": "spinner", "min": 40, "max": 500, "step": 10}
+        },
+        "edge_filter": {
+            "required": "false",
+            "description": "Reject Edge Glow (arm)",
+            "help": "Reject a long, fat streak whose BOTH ends sit on the border of the detection mask: horizon or lens-rim glow leaking through the feathered edge, which a changing sky turns into a frame difference. Real streaks that reach the border cross it - one end inside - and are thin. OFF by default = shadow mode: matches are logged as edge-shadow in meteors_vetoed.json and every saved meteor records edge_d (its farther end's distance to the border), but nothing is rejected. Here, over two months, it matched 9 detections, all edge glow, and no real streak.",
+            "type": {"fieldtype": "checkbox"}
+        },
+        "edge_margin": {
+            "required": "false",
+            "description": "Edge Margin (px)",
+            "help": "Both ends of a streak closer than this to the mask border count as 'on the border'. Stable here between 50 and 60 px on a 3840 px wide image.",
+            "type": {"fieldtype": "spinner", "min": 5, "max": 300, "step": 5}
+        },
+        "edge_max_elong": {
+            "required": "false",
+            "description": "Edge Glow Max Elongation",
+            "help": "Only streaks fatter than this (length/width below it) can be edge glow. Edge glow here measured 5 to 8; every real streak touching the border measured over 10.",
+            "type": {"fieldtype": "spinner", "min": 3, "max": 30, "step": 0.5}
+        },
+        "edge_min_len": {
+            "required": "false",
+            "description": "Edge Glow Min Length (px)",
+            "help": "Only streaks at least this long can be edge glow. Keeps a short, bright meteor that vanishes behind a tree at the border from being rejected.",
+            "type": {"fieldtype": "spinner", "min": 20, "max": 500, "step": 10}
         },
         "satellite_filter": {
             "required": "false",
@@ -413,6 +441,15 @@ metaData = {
                     "Fragment Segments (frag_min) default 3 -> 5. The fragmented-trail veto has run in shadow mode here for two months, recording frag_n on every saved detection. Of 107 saved detections, 11 reached the old threshold of 3; inspected by eye, 7 were satellite trails or artefacts and 3 were real meteors (scores 3, 4, 3). At 5 only the two clearest satellite trails (6 and 11) are caught and no real meteor. The filter stays off by default; this makes turning it on safe."
                 ]
             }
+        ],
+        "v0.5.7": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Edge-glow veto (edge_filter, shadow mode by default): rejects a long (>= 80 px), fat (elongation < 10) streak with BOTH ends within 50 px of the mask border - horizon or lens-rim glow leaking through the feathered edge. About a quarter of the saved detections here touched the border; the real streaks among them cross it with one end inside and are thin (elongation 10 to 47), while the glow bands hug it (elongation 5 to 8). Over two months it matched 9 detections, all inspected and all edge glow, and no real streak; the result is stable between 50 and 60 px and 70 and 80 px minimum length. Every saved meteor now records edge_d, so a user can check their own record before arming it."
+                ]
+            }
         ]
     }
 }
@@ -660,7 +697,7 @@ def _uploadVetoed(outdir, vetoeddir, thumb_fnames):
 
 
 # --- persistent state between frames (module stays loaded in the postprocess service) ---
-_maskCache = {"name": None, "soft": None, "hard": None}
+_maskCache = {"name": None, "soft": None, "hard": None, "dist": None}
 STATE_FILE = os.path.join(s.ALLSKY_TMP, "allsky_meteordetect_state.json")
 PREV_FRAME = os.path.join(s.ALLSKY_TMP, "allsky_meteordetect_prev.png")
 
@@ -685,8 +722,27 @@ def _loadMask(maskName, feather, shape):
         soft = cv2.GaussianBlur(hard, (k, k), 0).astype(np.float32) / 255.0
     else:
         soft = hard.astype(np.float32) / 255.0
-    _maskCache.update(name=(maskName, feather), soft=soft, hard=hard)
+    _maskCache.update(name=(maskName, feather), soft=soft, hard=hard, dist=None)
     return soft, hard
+
+
+def _edgeDistance(hard):
+    """Distance of every pixel to the nearest masked-out pixel, cached with the mask."""
+    if _maskCache.get("dist") is None or _maskCache["dist"].shape != hard.shape:
+        _maskCache["dist"] = cv2.distanceTransform((hard > 127).astype(np.uint8), cv2.DIST_L2, 5)
+    return _maskCache["dist"]
+
+
+def _edgeHug(cand, hard):
+    """How far the streak's FARTHER end is from the mask edge, in px. Small means both
+    ends sit on the border - see the edge-glow check. Never raises."""
+    try:
+        dist = _edgeDistance(hard)
+        h, w = dist.shape
+        return max(float(dist[min(max(int(p[1]), 0), h - 1), min(max(int(p[0]), 0), w - 1)])
+                   for p in (cand["p1"], cand["p2"]))
+    except Exception:
+        return float("inf")
 
 
 def _findStreaks(diff, min_len, min_elong, max_area, diff_thr):
@@ -991,6 +1047,7 @@ def _saveMeteor(img_path, stamp, streaks, outdir, thumbdir, save_marked,
                         "p1": [round(m["p1"][0], 1), round(m["p1"][1], 1)],
                         "p2": [round(m["p2"][0], 1), round(m["p2"][1], 1)],
                         "frag_n": m.get("frag_n", 0), "frag_ext": round(m.get("frag_ext", 0.0), 1),
+                        "edge_d": m.get("edge_d"),
                         "showers": showers, "radiant": radiant})
 
     # per-image sidecar: just this image's streaks, which is what the WebUI browser reads
@@ -1068,6 +1125,10 @@ def meteordetect(params, event):
     frag_filter = _truthy(params.get("frag_filter", False))   # off = shadow (measure + log, no veto)
     frag_min = s.int(params.get("frag_min", 5))
     frag_min_len = s.asfloat(params.get("frag_min_len", 120.0))
+    edge_filter = _truthy(params.get("edge_filter", False))   # off = shadow (measure + log, no veto)
+    edge_margin = s.asfloat(params.get("edge_margin", 50.0))
+    edge_max_elong = s.asfloat(params.get("edge_max_elong", 10.0))
+    edge_min_len = s.asfloat(params.get("edge_min_len", 80.0))
     sat_filter = _truthy(params.get("satellite_filter", True))
     scint_guard = _truthy(params.get("scint_guard", True))
     scint_max = s.int(params.get("scint_max", 8))
@@ -1235,6 +1296,18 @@ def meteordetect(params, event):
                     _veto(cand, "fragmented", cand.get("frag_n", 0))
                     continue
                 _veto(cand, "frag-shadow", cand.get("frag_n", 0))
+            # edge-glow check: a LONG, FAT streak with BOTH ends on the mask border is the
+            # horizon / lens-rim glow leaking through the feathered edge, not a meteor. Real
+            # streaks that reach the border cross it - one end inside - and are thin. Over two
+            # months here this matched 9 detections, all edge glow, and no real streak.
+            cand["edge_d"] = round(_edgeHug(cand, hard), 1)
+            if cand["len"] >= edge_min_len and cand.get("elong", 99.0) < edge_max_elong \
+                    and cand["edge_d"] < edge_margin:
+                if edge_filter:
+                    vetoed += 1
+                    _veto(cand, "edge-glow", cand["edge_d"])
+                    continue
+                _veto(cand, "edge-shadow", cand["edge_d"])
             keep.append(cand)
         if keep:
             n = _saveMeteor(entry["img_path"], entry["stamp"], keep,
