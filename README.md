@@ -294,6 +294,42 @@ sodium/iron, blue-white for fast trails. The gallery image is therefore never
 painted over; the optional marked copy draws brackets *around* the streak, never on
 it.
 
+## Testing without waiting for a clear night
+
+Meteors are rare and clear nights rarer, so "is it working, are my settings right" can
+otherwise take weeks to answer. `tools/replay_night.py` runs the detector over a night
+Allsky has already saved and reports what it would have confirmed and rejected, and why:
+
+```bash
+tools/replay_night.py 20260917                      # a night folder under images/
+tools/replay_night.py 20260917 --compare            # vs. what was saved live that night
+tools/replay_night.py 20260917 --set min_length=60  # try a setting without changing it
+```
+
+It tests the **installed** module with the settings of your night flow — the same code and
+the same fisheye calibration that run live — and only the frames Allsky would have
+treated as night. Everything happens in a sandbox folder it prints at the start: no
+detector state, no settings, no website and no overlay variables are touched, and nothing
+is uploaded. The marked copies it saves show exactly what was detected.
+
+**How close it gets.** On 2026-09-17 here, the replay found 4 of the 6 meteors the module
+saved live that night and reported 3 more, which on inspection were two satellite
+trails and a cloud wisp. So it is somewhat *more* eager than a live night, for two
+reasons:
+
+* It replays the images Allsky **saved**, which have the overlay on them and have been
+  JPEG-compressed once more. Live, the module sees the frame before the overlay module
+  runs (with this module right after *Load Image*).
+* The detector's memory of recurring hot spots starts empty, as on a new install.
+
+That makes it a good tool for *comparing* settings on the same night, and for checking
+that detection works at all — not an exact re-run of a live night.
+
+Use `--compare` to see which meteors were found live, in the replay, or both. Live stamps
+record when a frame was *processed*, replay stamps when it was *captured*, so the tool
+pairs a live stamp with the latest replayed meteor up to one maximum exposure plus a
+margin before it.
+
 ## Learning a classifier from your own labels (optional)
 
 The heuristic vetoes are good but not perfect. The module can bootstrap a *learned*

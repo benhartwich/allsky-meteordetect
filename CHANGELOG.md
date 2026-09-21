@@ -10,7 +10,15 @@
   `connectedComponentsWithStats` already provides. Same pixels, same order, so the
   results are **identical**: checked on four real frame pairs from 2026-09-17, one of
   them the frame of a live meteor. Time per frame dropped from ~66 s to ~0.27 s.
-- Found with the new replay tool (below), on its first run.
+- Found with the new replay tool, on its first run.
+- **New `tools/replay_night.py` — a test mode.** Runs the installed module, with the
+  night flow's settings, over a night Allsky already saved, inside a sandbox, and reports
+  what it would have confirmed and rejected. `--compare` sets the result against what the
+  module saved live that night; `--set key=value` tries a setting without changing it.
+  Answers the recurring "is there a way to run a test?" (AllskyTeam/allsky discussion
+  #4281) without waiting for a clear night. On 2026-09-17 it found 4 of the 6 live
+  meteors, plus two satellite trails and a cloud wisp that live correctly skipped: it
+  replays the saved images, which carry the overlay and a second JPEG compression.
 
 ## v0.5.4
 
