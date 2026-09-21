@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.5.4
+
+- **Results are now real Allsky variables.** `AS_METEORCOUNT`, `AS_METEORIMAGE`,
+  `AS_METEORIMAGEPATH`, `AS_METEORIMAGEURL`, `AS_METEORMOVING` and `AS_METEORVETOED` are
+  declared in `metaData["extradata"]` and written with `saveExtraData`, so they show up in
+  the WebUI's variable list and reach MQTT. Until now they were only environment
+  variables, which the overlay of the same frame can read but nothing else on Allsky 2025
+  can. Reported on [#2](https://github.com/benhartwich/allsky-meteordetect/issues/2) by a
+  user feeding Home Assistant from the built-in module's variables.
+- **The first four keep the built-in module's names**, so an overlay or MQTT consumer built
+  on them keeps working after switching. The image values point at the meteor *saved* on
+  the frame rather than the analysed frame, since a meteor is only confirmed one frame
+  later.
+- Handles both `saveExtraData` signatures: Allsky 2025's
+  `(file, data, source, structure, …)` and 2024's `(file, data)`.
+
 ## v0.5.3
 
 - **Display name is now “Meteor Detection (temporal)”.** Allsky's built-in

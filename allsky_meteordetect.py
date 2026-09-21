@@ -29,12 +29,23 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection (temporal)",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.5.3",
+    "version": "v0.5.4",
     "events": [
         "night"
     ],
     "experimental": "false",
     "module": "allsky_meteordetect",
+    "extradatafilename": "allsky_meteordetect.json",
+    "extradata": {
+        "values": {
+            "AS_METEORCOUNT": {"name": "${METEORCOUNT}", "format": "", "sample": "", "group": "Meteors", "description": "Meteors confirmed on this frame", "type": "number"},
+            "AS_METEORIMAGE": {"name": "${METEORIMAGE}", "format": "", "sample": "", "group": "Meteors", "description": "File name of the meteor image saved on this frame", "type": "string"},
+            "AS_METEORIMAGEPATH": {"name": "${METEORIMAGEPATH}", "format": "", "sample": "", "group": "Meteors", "description": "Full path of the meteor image saved on this frame", "type": "string"},
+            "AS_METEORIMAGEURL": {"name": "${METEORIMAGEURL}", "format": "", "sample": "", "group": "Meteors", "description": "WebUI URL of that meteor's thumbnail", "type": "string"},
+            "AS_METEORMOVING": {"name": "${METEORMOVING}", "format": "", "sample": "", "group": "Meteors", "description": "Streaks rejected as satellites/aircraft on this frame", "type": "number"},
+            "AS_METEORVETOED": {"name": "${METEORVETOED}", "format": "", "sample": "", "group": "Meteors", "description": "Streaks rejected by the other filters on this frame", "type": "number"}
+        }
+    },
     "arguments": {
         "mask": "meteor_mask.png",
         "min_length": "50",
@@ -373,6 +384,15 @@ metaData = {
                 "authorurl": "https://astronomy.garden",
                 "changes": [
                     "Display name is now 'Meteor Detection (temporal)'. Allsky's built-in allsky_meteor.py is also called 'Meteor Detection', so the Module Manager listed two identical entries and users could not tell which one they had added."
+                ]
+            }
+        ],
+        "v0.5.4": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Publish results as real Allsky variables: AS_METEORCOUNT, AS_METEORIMAGE, AS_METEORIMAGEPATH, AS_METEORIMAGEURL, AS_METEORMOVING, AS_METEORVETOED, declared in metaData['extradata'] and written with saveExtraData. Until now they were only environment variables, which reach the overlay of the same frame but not the variable list or MQTT on Allsky 2025. The first four match the built-in meteor module's names, so an overlay or Home Assistant feed built on those keeps working after switching modules. The image values point at the meteor saved on the frame. Works with both saveExtraData signatures (2024 and 2025)."
                 ]
             }
         ]
@@ -870,6 +890,42 @@ def _copyToWebUI(day, stamp, fname, outdir, thumbdir, entries, save_marked):
         s.log(1, f"WARNING: meteordetect could not populate the WebUI folder for {day}: {ex}")
 
 
+def _publishVariables(count, moving=0, vetoed=0, saved_stamp=None, saved_day=None,
+                      save_webui=True, outdir=None):
+    """Publish this frame's result as Allsky variables, under the same names Allsky's
+    built-in meteor module uses (AS_METEORCOUNT, AS_METEORIMAGE, AS_METEORIMAGEPATH,
+    AS_METEORIMAGEURL), so an overlay, MQTT feed or anything else built on those keeps
+    working with this module instead. Only what goes through saveExtraData and is
+    declared in metaData['extradata'] is published on Allsky 2025; an environment
+    variable alone reaches nothing but the overlay of the same frame.
+
+    The image values point at the meteor SAVED on this frame - the built-in points at
+    the frame it analysed, but here a meteor is only confirmed one frame later - and
+    are empty when nothing was saved. Never raises."""
+    image = path = url = ""
+    if saved_stamp:
+        image = f"meteors-{saved_stamp}.jpg"
+        daydir = _webUIDayDir(saved_day) if save_webui else None
+        if daydir:
+            path = os.path.join(daydir, image)
+            url = f"/images/{saved_day}/{WEBUI_THUMB_DIR}/{image}"
+        elif outdir:
+            path = os.path.join(outdir, image)
+    values = {"AS_METEORCOUNT": int(count), "AS_METEORIMAGE": image,
+              "AS_METEORIMAGEPATH": path, "AS_METEORIMAGEURL": url,
+              "AS_METEORMOVING": int(moving), "AS_METEORVETOED": int(vetoed)}
+    for key in ("AS_METEORCOUNT", "AS_METEORMOVING", "AS_METEORVETOED"):
+        s.setEnvironmentVariable(key, str(values[key]))
+    try:
+        try:
+            s.saveExtraData(metaData["extradatafilename"], values,
+                            metaData["module"], metaData["extradata"])
+        except TypeError:           # Allsky 2024: saveExtraData(file_name, extra_data)
+            s.saveExtraData(metaData["extradatafilename"], values)
+    except Exception as ex:
+        s.log(1, f"WARNING: meteordetect could not publish its variables: {ex}")
+
+
 def _saveMeteor(img_path, stamp, streaks, outdir, thumbdir, save_marked,
                 day=None, save_webui=True):
     """Save the pristine true-colour meteor image + thumbnail + json. Returns 1/0.
@@ -970,7 +1026,8 @@ def meteordetect(params, event):
 
     raining, rainFlag = s.raining()
     if rainFlag:
-        s.setEnvironmentVariable("AS_METEORCOUNT", "Disabled (rain)")
+        _publishVariables(0)
+        s.setEnvironmentVariable("AS_METEORCOUNT", "Disabled (rain)")   # overlay text as before
         return "Raining - meteor detection skipped"
 
     min_len = s.int(params.get("min_length", 50))
@@ -1024,7 +1081,7 @@ def meteordetect(params, event):
     prev = cv2.imread(PREV_FRAME, cv2.IMREAD_GRAYSCALE)
     cv2.imwrite(PREV_FRAME, gray.astype(np.uint8))
     if prev is None or prev.shape != gray.shape:
-        s.setEnvironmentVariable("AS_METEORCOUNT", "0")
+        _publishVariables(0)
         return "First frame stored, need a second frame to compare"
 
     # frame difference, remove global offset, apply SOFT mask
@@ -1037,7 +1094,7 @@ def meteordetect(params, event):
     # cloud gate
     coverage = float((diff_m > diff_thr).mean() / max(1e-6, (hard > 0).mean()))
     if coverage > cloud_frac:
-        s.setEnvironmentVariable("AS_METEORCOUNT", "0")
+        _publishVariables(0)
         st = _readState(); st["prev_streaks"] = []; _writeState(st)
         return f"Cloudy frame skipped (coverage {coverage*100:.1f}%)"
 
@@ -1078,7 +1135,7 @@ def meteordetect(params, event):
             st["prev_streaks"] = []
             st["pending"] = []
             _writeState(st)
-            s.setEnvironmentVariable("AS_METEORCOUNT", "0")
+            _publishVariables(0)
             return "Scintillation-dominated frame skipped (clear sky, star twinkle)"
 
     state = _readState()
@@ -1099,6 +1156,7 @@ def meteordetect(params, event):
                    if (h[0] - cand["cx"]) ** 2 + (h[1] - cand["cy"]) ** 2 <= r2)
 
     saved, moving, vetoed = 0, 0, 0
+    last_saved = (None, None)       # (stamp, day) of the last meteor saved on this frame
 
     # --- 1) resolve last frame's pending candidates ---
     # A real meteor is present in exactly one frame, so it shows up in TWO consecutive
@@ -1158,6 +1216,8 @@ def meteordetect(params, event):
                             outdir, thumbdir, save_marked,
                             entry.get("day") or _currentDay(), save_webui)
             saved += n
+            if n:
+                last_saved = (entry["stamp"], entry.get("day") or _currentDay())
             if n and upload_remote:
                 _uploadRemote(outdir, thumbdir, f"meteors-{entry['stamp']}.jpg")
         _safeRemove(entry["img_path"])
@@ -1191,9 +1251,7 @@ def meteordetect(params, event):
     state["pending"] = new_pending
     _writeState(state)
 
-    s.setEnvironmentVariable("AS_METEORCOUNT", str(saved))
-    s.setEnvironmentVariable("AS_METEORMOVING", str(moving))
-    s.setEnvironmentVariable("AS_METEORVETOED", str(vetoed))
+    _publishVariables(saved, moving, vetoed, last_saved[0], last_saved[1], save_webui, outdir)
     result = (f"{saved} meteor(s) confirmed, {moving} moving rejected, "
               f"{vetoed} artifact(s) vetoed, {len(new_cands)} new candidate(s) pending, "
               f"{len(streaks)} streak(s) total")

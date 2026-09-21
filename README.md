@@ -263,6 +263,30 @@ meteors included. The website folder follows the separate, usually much longer
 *Days To Keep on Local Website*, so it stays the complete record — and the source
 this tool can always refill from.
 
+### Variables
+
+Each frame publishes its result as Allsky variables — in the WebUI's variable list,
+usable in overlays, and passed on by modules such as MQTT. The first four use **the same
+names as Allsky's built-in meteor module**, so an overlay or a Home Assistant feed built
+on those keeps working when you switch to this module:
+
+| Variable | Meaning |
+|---|---|
+| `AS_METEORCOUNT` | meteors confirmed on this frame |
+| `AS_METEORIMAGE` | file name of the meteor image saved on this frame, empty if none |
+| `AS_METEORIMAGEPATH` | full path of that image under `images/<day>/meteors/` |
+| `AS_METEORIMAGEURL` | WebUI URL of its thumbnail in `meteorsthumbnails/` |
+| `AS_METEORMOVING` | streaks rejected as satellites/aircraft on this frame |
+| `AS_METEORVETOED` | streaks rejected by the other filters on this frame |
+
+One difference to the built-in: its image values point at the frame it analysed. Here a
+meteor is only confirmed one frame later, so they point at the **saved meteor image**
+instead. With *Browse in the Allsky WebUI* off, the path points into the website folder
+and the URL stays empty.
+
+Run only one of the two meteor modules: both publish `AS_METEORCOUNT`, and whichever
+runs last wins.
+
 ### Why true colour matters
 
 Meteor colour encodes composition — green from magnesium/oxygen, yellow/orange from
