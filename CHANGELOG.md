@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.5
+
+- **Streak finding is about 240× faster.** For every connected component in the
+  difference image it ran `np.where(labels == i)` over the *whole* 8-megapixel label
+  image. A noisy, moonlit or twinkling sky produces around 1400 components, so a single
+  frame could take 60–70 s on a Pi 4 — holding up every module after this one in the
+  flow. It now searches only each component's bounding box, which
+  `connectedComponentsWithStats` already provides. Same pixels, same order, so the
+  results are **identical**: checked on four real frame pairs from 2026-09-17, one of
+  them the frame of a live meteor. Time per frame dropped from ~66 s to ~0.27 s.
+- Found with the new replay tool (below), on its first run.
+
 ## v0.5.4
 
 - **Results are now real Allsky variables.** `AS_METEORCOUNT`, `AS_METEORIMAGE`,

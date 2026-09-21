@@ -29,7 +29,7 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection (temporal)",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.5.4",
+    "version": "v0.5.5",
     "events": [
         "night"
     ],
@@ -395,6 +395,15 @@ metaData = {
                     "Publish results as real Allsky variables: AS_METEORCOUNT, AS_METEORIMAGE, AS_METEORIMAGEPATH, AS_METEORIMAGEURL, AS_METEORMOVING, AS_METEORVETOED, declared in metaData['extradata'] and written with saveExtraData. Until now they were only environment variables, which reach the overlay of the same frame but not the variable list or MQTT on Allsky 2025. The first four match the built-in meteor module's names, so an overlay or Home Assistant feed built on those keeps working after switching modules. The image values point at the meteor saved on the frame. Works with both saveExtraData signatures (2024 and 2025)."
                 ]
             }
+        ],
+        "v0.5.5": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Performance: streak finding searched the whole 8-megapixel label image once per connected component. A noisy or twinkling sky yields ~1400 components, which cost ~60-70 s per frame on a Pi 4 - delaying every module after this one. It now searches only each component's bounding box: the same pixels in the same order, so results are identical (verified on four real frame pairs), about 240x faster (~0.3 s). Found with the new replay test tool."
+                ]
+            }
         ]
     }
 }
@@ -681,7 +690,14 @@ def _findStreaks(diff, min_len, min_elong, max_area, diff_thr):
         area = stats[i, cv2.CC_STAT_AREA]
         if area < 12 or area > max_area:
             continue
-        ys, xs = np.where(lab == i)
+        # Search only the component's bounding box. np.where over the whole label image
+        # scanned all 8 megapixels once PER component - about 70 s a frame on a Pi 4 when
+        # a noisy or twinkling sky yields ~1400 components. Same pixels, same order.
+        x0, y0 = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP]
+        bw_, bh_ = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
+        ys, xs = np.where(lab[y0:y0 + bh_, x0:x0 + bw_] == i)
+        ys = ys + y0
+        xs = xs + x0
         pts = np.column_stack((xs, ys)).astype(np.float32)
         if len(pts) < 5:
             continue
