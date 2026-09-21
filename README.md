@@ -382,6 +382,41 @@ record when a frame was *processed*, replay stamps when it was *captured*, so th
 pairs a live stamp with the latest replayed meteor up to one maximum exposure plus a
 margin before it.
 
+## Aligning the Website's constellation overlay
+
+Allsky's documentation calls aligning the constellation overlay "a trial-and-error effort
+that takes time": guess the overlay's size, nudge its offsets, rotate it, reload, repeat.
+With a fisheye calibration (see above) there is nothing left to guess.
+`tools/align_overlay.py` computes all five settings — and the projection that fits your
+lens best — from the plate solve:
+
+```bash
+tools/align_overlay.py                               # print the settings, change nothing
+tools/align_overlay.py --preview image-XXXX.jpg      # mark stars vs. overlay on a night frame
+tools/align_overlay.py --apply                       # write them into the local Website
+tools/align_overlay.py --config ~/allsky/config/remote_configuration.json   # remote Website
+```
+
+**How it works.** The overlay is drawn by *virtualsky*, whose zenith-centred projections
+are `polar` (equidistant), `fisheye` (equisolid — Allsky's default) and `ortho`. The
+calibration's centre and rotation carry over exactly. Its radial law generally matches
+none of the three, so the tool fits the radius over the sky your camera actually sees,
+tries all three projections, and reports the error that remains.
+
+**How good it gets.** Here, with a lens that stretches towards the edge, `polar` fits
+best: about **1.7° RMS**, under 2.5° over 95 % of the sky, 3.5° at worst near the edge —
+against about 2.0° for the default `fisheye`. That remaining error is the difference
+between the lens and virtualsky's projections, not a calibration error (the plate solve
+itself is good to 0.15°).
+
+**Verified in a browser, not just on paper.** The real `virtualsky.js`, run in headless
+Chromium with these settings, places the stars within 0.00 px of the tool's own model,
+and 1.7° on average from the real stars in a frame of 2026-09-17 — as predicted.
+
+One limit: virtualsky always draws east on the left. A calibration with east on the
+right (`flip: +1`) cannot be matched by any setting; the tool says so instead of
+writing something wrong.
+
 ## Learning a classifier from your own labels (optional)
 
 The heuristic vetoes are good but not perfect. The module can bootstrap a *learned*

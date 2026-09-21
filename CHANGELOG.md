@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **New `tools/align_overlay.py`: aligns the Allsky Website's constellation overlay** from
+  the fisheye calibration instead of by trial and error. Computes `projection`,
+  `overlayWidth`/`overlayHeight`, `overlayOffsetLeft`/`overlayOffsetTop` and `az`; picks
+  the best of virtualsky's zenith-centred projections by least squares over the visible
+  sky and reports the remaining error; `--preview` marks stars vs. overlay on a frame;
+  `--apply` writes the values with a backup. Here: `polar`, 1.7° RMS (default `fisheye`
+  would be 2.0°). Checked against the real `virtualsky.js` in headless Chromium: 0.00 px
+  difference from the tool's model, 1.7° mean from the real stars.
+
 ## v0.5.7
 
 - **New edge-glow veto** (`edge_filter`, shadow mode by default). Rejects a long, fat
