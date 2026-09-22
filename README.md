@@ -171,12 +171,31 @@ With a calibrated fisheye projection the module can attribute each meteor to the
 just "which showers are active tonight".
 
 `tools/calibrate_fisheye.py` fits the camera model (optical centre, radial
-distortion, rotation, handedness) from a plate-solved night frame: bright stars are
-detected, their true alt/az computed (Hipparcos + sidereal time), matched and
-least-squares fitted. Blind matching is unreliable on a rich Milky-Way sky, so the
-robust path is to **plate-solve a small zenith crop with astrometry.net** (which is
-robust to star density) and bootstrap the full-frame fit from it. The result is a
-`calibration.json` (verified here to **0.11° RMS over 228 stars**).
+distortion, rotation, handedness) from clear night frames. Identify **two bright stars**
+in the first frame and give their pixel positions; everything else is automatic:
+
+```bash
+tools/calibrate_fisheye.py image-A.jpg image-B.jpg --star vega 2828 1213 --star altair 2527 1976 \
+    --out calibration.json --preview check.jpg
+```
+
+Two stars fix centre, scale and rotation. From there the tool computes where every
+bright catalogue star (Vmag ≤ 3) stood at each frame's time and place, looks for it in a
+window around that prediction, and fits the lens by least squares — shrinking the
+window from 100 to 20 px as the model improves. A star is used only when the brightest
+point in its window clearly outshines everything else there, so it cannot be confused
+with a neighbour. Clicks 10 px off, or any of three different star pairs, all converge
+to the same solution. `--seed calibration.json` starts from an earlier calibration
+instead; with neither, a blind search is tried (experimental).
+
+Here, from two frames four hours apart: **77 bright stars, 0.28° RMS (5 px)** from the
+zenith down to 15° altitude. Check `--preview`: every green circle should sit on a star.
+
+> **Earlier calibrations were wrong away from the zenith.** Until v0.5.8 the fit matched
+> stars to their *nearest* detection in a deep catalogue. In a dense Milky Way field a
+> wrong model still finds a neighbour within a few pixels for almost every star, so it
+> reported 0.15° over 317 stars while placing stars at 30° altitude 470 px off. If you
+> made a `calibration.json` with an earlier version, make it again.
 
 `allsky_fisheye.py` then provides `pixel_to_altaz` / `altaz_to_pixel` and
 `match_radiant`: a meteor travels along a great circle whose backward extension
@@ -403,15 +422,14 @@ calibration's centre and rotation carry over exactly. Its radial law generally m
 none of the three, so the tool fits the radius over the sky your camera actually sees,
 tries all three projections, and reports the error that remains.
 
-**How good it gets.** Here, with a lens that stretches towards the edge, `polar` fits
-best: about **1.7° RMS**, under 2.5° over 95 % of the sky, 3.5° at worst near the edge —
-against about 2.0° for the default `fisheye`. That remaining error is the difference
-between the lens and virtualsky's projections, not a calibration error (the plate solve
-itself is good to 0.15°).
+**How good it gets.** Here the lens turns out to be close to equisolid, so Allsky's
+default `fisheye` projection fits best: **0.30° RMS** over the visible sky, under 0.7°
+over 95 % of it, 1.3° at worst near the edge (`polar` 1.2°, `ortho` 2.5°). So for this
+lens virtualsky needs no new projection, only the right size, offsets and rotation.
 
-**Verified in a browser, not just on paper.** The real `virtualsky.js`, run in headless
-Chromium with these settings, places the stars within 0.00 px of the tool's own model,
-and 1.7° on average from the real stars in a frame of 2026-09-17 — as predicted.
+**Verified in a browser, against real stars.** The real `virtualsky.js`, run in headless
+Chromium with these settings, puts the bright stars of a frame from 2026-09-17 **0.46°
+RMS** from where they actually are in the image (measured star centres, not the model).
 
 One limit: virtualsky always draws east on the left. A calibration with east on the
 right (`flip: +1`) cannot be matched by any setting; the tool says so instead of

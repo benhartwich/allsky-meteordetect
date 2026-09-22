@@ -49,7 +49,7 @@ def pixel_to_altaz(x, y, c):
         f = a1*t + a3*t**3 - r
         fp = a1 + 3*a3*t*t
         step = f/fp
-        t -= step
+        t = min(1.5, max(0.0, t - step))            # clamp: corners beyond the lens circle
         if abs(step) < 1e-7:
             break
     alt = 90.0 - t*90.0

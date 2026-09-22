@@ -29,7 +29,7 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection (temporal)",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.5.7",
+    "version": "v0.5.8",
     "events": [
         "night"
     ],
@@ -448,6 +448,16 @@ metaData = {
                 "authorurl": "https://astronomy.garden",
                 "changes": [
                     "Edge-glow veto (edge_filter, shadow mode by default): rejects a long (>= 80 px), fat (elongation < 10) streak with BOTH ends within 50 px of the mask border - horizon or lens-rim glow leaking through the feathered edge. About a quarter of the saved detections here touched the border; the real streaks among them cross it with one end inside and are thin (elongation 10 to 47), while the glow bands hug it (elongation 5 to 8). Over two months it matched 9 detections, all inspected and all edge glow, and no real streak; the result is stable between 50 and 60 px and 70 and 80 px minimum length. Every saved meteor now records edge_d, so a user can check their own record before arming it."
+                ]
+            }
+        ],
+        "v0.5.8": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Fisheye calibration fixed: the old fit matched stars to their nearest detection in a deep catalogue, which in a dense Milky Way field lets a wrong model look good. It was right only near the zenith (stars at 30 deg altitude 470 px off), so the star-trail veto, bright-star veto and radiant matching were off below about 60 deg. tools/calibrate_fisheye.py now fits only bright stars it can identify beyond doubt, starting from two stars you identify (--star) or an earlier calibration (--seed): 77 stars, 0.28 deg RMS. Re-checked on the saved record: 4 of 30 star-trail vetoes were real meteors the old calibration threw away. If you made a calibration.json with an earlier version, make it again.",
+                    "tools/align_overlay.py: computes the Website's constellation overlay settings from the calibration. Here Allsky's default fisheye projection fits the lens to 0.30 deg."
                 ]
             }
         ]

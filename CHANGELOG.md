@@ -1,15 +1,35 @@
 # Changelog
 
-## Unreleased
+## v0.5.8
 
+- **The fisheye calibration was wrong away from the zenith; fixed.** The old fit matched
+  stars to their nearest detection in a deep catalogue. In a dense Milky Way field a
+  wrong model still finds a neighbour within a few pixels for almost every star, so it
+  reported 0.15° over 317 stars while placing stars at 50° altitude 124 px, at 30° 470 px
+  off. The star-trail veto, the bright-star veto and radiant matching were therefore
+  only right near the zenith.
+- **`tools/calibrate_fisheye.py` rewritten.** Identify two bright stars (`--star NAME X Y`,
+  twice), or start from an earlier calibration (`--seed`); blind search stays as an
+  experimental fallback. It fits only bright stars (Vmag ≤ 3) it can identify beyond
+  doubt — the brightest point in a shrinking search window, and only when it clearly
+  outshines everything else there. Two frames four hours apart: 77 stars, 0.28° RMS.
+  Three different star pairs, clicks 10 px off, the old calibration as seed and the blind
+  search all converge to the same lens.
+- **New `calibration.json`** for this camera: centre (1950, 1066), a1 2010, a3 −267,
+  rotation 18.2°, horizon radius 1743 px (the old one claimed 3413 px).
+- Effect, re-checked on the saved record: of 30 star-trail vetoes, 26 are still trailed
+  stars; the other 4 were real meteors the old calibration threw away. Of 97 saved
+  detections one would now be trail-vetoed: an edge-glow band, not a meteor.
+- `allsky_fisheye.pixel_to_altaz` no longer diverges in the frame corners beyond the lens
+  circle (a3 is now negative).
 - **New `tools/align_overlay.py`: aligns the Allsky Website's constellation overlay** from
   the fisheye calibration instead of by trial and error. Computes `projection`,
   `overlayWidth`/`overlayHeight`, `overlayOffsetLeft`/`overlayOffsetTop` and `az`; picks
   the best of virtualsky's zenith-centred projections by least squares over the visible
   sky and reports the remaining error; `--preview` marks stars vs. overlay on a frame;
-  `--apply` writes the values with a backup. Here: `polar`, 1.7° RMS (default `fisheye`
-  would be 2.0°). Checked against the real `virtualsky.js` in headless Chromium: 0.00 px
-  difference from the tool's model, 1.7° mean from the real stars.
+  `--apply` writes the values with a backup. With the corrected calibration Allsky's
+  default `fisheye` projection fits this lens to 0.30°; the real `virtualsky.js` in
+  headless Chromium puts bright stars 0.46° RMS from their measured positions.
 
 ## v0.5.7
 
