@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `tools/calibrate_fisheye.py --list-stars`: lists the named bright stars above 20° at
+  the frame's time with altitude and compass direction, to choose the two for `--star`.
+- `tools/align_overlay.py` no longer falls back to the repository's `calibration.json`
+  (the author's camera) and refuses a calibration whose site differs from Allsky's
+  location by more than 0.5°. Without `--apply` it also runs when the Website
+  configuration is missing, assuming Allsky's default `imageWidth` of 900.
+
 ## v0.5.8
 
 - **The fisheye calibration was wrong away from the zenith; fixed.** The old fit matched

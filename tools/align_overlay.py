@@ -80,6 +80,28 @@ def _fit(calib, fisheye, image_w, image_h, design_w, mask_path=None, step=24):
     return out, float(np.degrees(z).max()), len(xs)
 
 
+def _checkSite(calib, home):
+    """Refuse a calibration made somewhere else: it would give confident, wrong settings."""
+    try:
+        st = json.load(open(os.path.join(home, "config", "settings.json")))
+    except Exception:
+        return
+    import re
+    def num(v):
+        m = re.fullmatch(r"\s*([+-]?\d+(?:\.\d+)?)\s*([NSEWnsew]?)\s*", str(v or ""))
+        if not m:
+            return None
+        x = float(m.group(1))
+        return -x if m.group(2).upper() in ("S", "W") else x
+    lat, lon = num(st.get("latitude")), num(st.get("longitude"))
+    if lat is None or lon is None or "lat" not in calib:
+        return
+    if abs(lat - calib["lat"]) > 0.5 or abs(lon - calib["lon"]) > 0.5:
+        sys.exit(f"ERROR: this calibration was made at {calib['lat']:.2f}, {calib['lon']:.2f}, but Allsky is "
+                 f"set to {lat:.2f}, {lon:.2f}. It belongs to another camera - make your own with "
+                 "tools/calibrate_fisheye.py.")
+
+
 def _settings(calib, R, projection, design_w, image_w):
     s = design_w / float(image_w)
     if calib.get("flip", -1) != -1:
@@ -153,17 +175,29 @@ def main():
 
     calib_path = args.calibration
     if not calib_path:
+        # only an INSTALLED calibration: the repository's calibration.json is the author's
+        # camera, and using it for yours would give confident, wrong settings
         for cand in (os.path.join(home, "config", "myFiles", "modules", "calibration.json"),
-                     os.path.join(home, "scripts", "modules", "calibration.json"), _here("calibration.json")):
+                     os.path.join(home, "scripts", "modules", "calibration.json")):
             if os.path.isfile(cand):
                 calib_path = cand
                 break
+    if not calib_path:
+        sys.exit("ERROR: no calibration found - make one with tools/calibrate_fisheye.py and pass it "
+                 "with --calibration")
     calib = json.load(open(calib_path))
+    _checkSite(calib, home)
     sys.path.insert(0, os.path.dirname(os.path.abspath(calib_path)))
     sys.path.insert(0, _here())
     import allsky_fisheye as fisheye
 
-    doc = json.load(open(args.config))
+    if os.path.isfile(args.config):
+        doc = json.load(open(args.config))
+    elif args.apply:
+        sys.exit(f"ERROR: no Website configuration at {args.config} - pass --config")
+    else:
+        print(f"note: no Website configuration at {args.config}; assuming Allsky's default imageWidth 900")
+        doc = {"config": {}}
     cfg = doc.get("config", doc)
     design_w = float(cfg.get("imageWidth") or 900)
     image_w, image_h = int(calib.get("W", 3840)), int(calib.get("H", 2160))

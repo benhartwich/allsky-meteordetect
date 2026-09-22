@@ -175,9 +175,17 @@ distortion, rotation, handedness) from clear night frames. Identify **two bright
 in the first frame and give their pixel positions; everything else is automatic:
 
 ```bash
+tools/calibrate_fisheye.py image-A.jpg --list-stars      # which bright stars were up, and where
 tools/calibrate_fisheye.py image-A.jpg image-B.jpg --star vega 2828 1213 --star altair 2527 1976 \
     --out calibration.json --preview check.jpg
 ```
+
+Read the two stars' pixel positions in any image viewer that shows the cursor position,
+on the full-size frame. Both tools only read Allsky's files; `calibrate_fisheye.py`
+writes nothing but `--out` and `--preview`, and `align_overlay.py` changes nothing
+without `--apply`. `align_overlay.py` uses an installed calibration or the one given
+with `--calibration`, never the `calibration.json` in this repository (that is the
+author's camera), and refuses a calibration made at another site.
 
 Two stars fix centre, scale and rotation. From there the tool computes where every
 bright catalogue star (Vmag ≤ 3) stood at each frame's time and place, looks for it in a

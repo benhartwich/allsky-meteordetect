@@ -19,7 +19,8 @@ stars.json from this repository. Location comes from Allsky's settings, the time
 the frame's file name (Allsky names frames in the Pi's local time).
 
 Usage:
-    tools/calibrate_fisheye.py FRAME --star vega 2950 1236 --star deneb 2308 1183
+    tools/calibrate_fisheye.py FRAME --list-stars              # which bright stars are up
+    tools/calibrate_fisheye.py FRAME --star vega 2828 1213 --star altair 2527 1976
     tools/calibrate_fisheye.py FRAME1 FRAME2 --seed calibration.json --out calibration.json --preview check.jpg
     tools/calibrate_fisheye.py FRAME                      # blind, experimental
 """
@@ -335,8 +336,27 @@ def main():
     ap.add_argument("--out", help="write calibration.json here")
     ap.add_argument("--preview", help="write a check image of the first frame here")
     ap.add_argument("-v", "--verbose", action="store_true", help="show each refinement step")
+    ap.add_argument("--list-stars", action="store_true",
+                    help="list the named bright stars above the horizon at the first frame's time, "
+                         "to choose two for --star, and stop")
     args = ap.parse_args()
     lat, lon = _location(args)
+    if args.list_stars:
+        utc = _frameUtc(args.frames[0])
+        lst = F.local_sidereal_deg(utc, lon)
+        compass = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+        rows = []
+        for name, (ra, dec) in NAMED.items():
+            alt, az = F.radec_to_altaz(ra, dec, lst, lat)
+            if alt >= 20:
+                rows.append((alt, az, name))
+        print(f"Bright stars at least 20 deg up at {os.path.basename(args.frames[0])} "
+              f"({lat:.2f}, {lon:.2f}). Pick two far apart, not too low:")
+        for alt, az, name in sorted(rows, reverse=True):
+            print(f"  {name:11} altitude {alt:4.0f} deg   azimuth {az:4.0f} deg ({compass[int((az + 22.5) % 360 // 45)]})")
+        print("Then read each one's pixel position in an image viewer and run with "
+              "--star NAME X Y --star NAME X Y.")
+        return
     started = time.time()
 
     frames, utcs, size, blind = [], [], None, None
