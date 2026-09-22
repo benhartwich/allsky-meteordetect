@@ -18,6 +18,7 @@ debug image draws brackets AROUND the streak, never over it, so the meteor's col
 """
 import allsky_shared as s
 import os
+import sys
 import re
 import json
 import time
@@ -29,11 +30,13 @@ import numpy as np
 metaData = {
     "name": "Meteor Detection (temporal)",
     "description": "Detects meteors via frame differencing and separates them from satellites/aircraft",
-    "version": "v0.5.8",
+    "version": "v0.5.9",
     "events": [
         "night"
     ],
     "experimental": "false",
+    "group": "Image Analysis",
+    "centersettings": "false",
     "module": "allsky_meteordetect",
     "extradatafilename": "allsky_meteordetect.json",
     "extradata": {
@@ -460,6 +463,18 @@ metaData = {
                     "tools/align_overlay.py: computes the Website's constellation overlay settings from the calibration. Here Allsky's default fisheye projection fits the lens to 0.30 deg."
                 ]
             }
+        ],
+        "v0.5.9": [
+            {
+                "author": "Benjamin Hartwich",
+                "authorurl": "https://astronomy.garden",
+                "changes": [
+                    "Packaged for the allsky-modules repository, so Allsky 2025's Module Package Manager can install it. The bundled files (allsky_fisheye.py, stars.json, tools/) are read from the module's data folder (moduledata/data/allsky_meteordetect) and, as before, from beside the module.",
+                    "Your own calibration.json stays beside the module (config/myFiles/modules on Allsky 2025): the package manager replaces the data folder on every update.",
+                    "tools/calibrate_fisheye.py: a star must now reach 12 times the image's own noise instead of a fixed brightness, and a fit is judged by its error in degrees, so it also works on smooth, moonlit images from other cameras. --list-stars lists the bright stars that were up, to choose the two for --star.",
+                    "tools/align_overlay.py: never uses the repository's calibration.json (the author's camera), refuses a calibration made at another site, and runs without the Website configuration unless --apply is given."
+                ]
+            }
         ]
     }
 }
@@ -494,6 +509,24 @@ def _activeShowers(stamp):
     return [n for _, n in sorted(out, reverse=True)]
 
 
+# --- bundled files ---
+# The package manager installs the module's support files (allsky_fisheye.py, stars.json,
+# tools/) into moduledata/data/<module>/ below the module; a hand-copied module has them
+# beside itself. The user's own calibration.json always sits beside the module, because
+# the package manager replaces the data folder on every update.
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+_DATA_DIRS = (os.path.join(_MODULE_DIR, "moduledata", "data", "allsky_meteordetect"), _MODULE_DIR)
+
+
+def _dataFile(name):
+    """Path of a bundled support file (the last candidate if none exists)."""
+    for d in _DATA_DIRS:
+        path = os.path.join(d, name)
+        if os.path.isfile(path):
+            return path
+    return os.path.join(_DATA_DIRS[-1], name)
+
+
 # --- optional geometric radiant matching (needs allsky_fisheye + calibration.json) ---
 _calibCache = {"done": False, "mod": None, "calib": None}
 
@@ -503,8 +536,11 @@ def _loadCalib():
     if not _calibCache["done"]:
         _calibCache["done"] = True
         try:
+            lib = os.path.dirname(_dataFile("allsky_fisheye.py"))
+            if lib not in sys.path:
+                sys.path.insert(0, lib)
             import allsky_fisheye as fe
-            p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")
+            p = os.path.join(_MODULE_DIR, "calibration.json")
             _calibCache["calib"] = fe.load_calibration(p)
             _calibCache["mod"] = fe
             s.log(4, "INFO: meteordetect geometric radiant matching enabled")
@@ -574,7 +610,7 @@ def _loadStars():
     if not _starCache["done"]:
         _starCache["done"] = True
         try:
-            p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stars.json")
+            p = _dataFile("stars.json")
             _starCache["cat"] = np.asarray(json.load(open(p))["stars"], dtype=float)
         except Exception as ex:
             s.log(1, f"INFO: meteordetect star veto disabled (no catalogue: {ex})")

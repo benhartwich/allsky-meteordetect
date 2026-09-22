@@ -1,7 +1,14 @@
 # Changelog
 
-## Unreleased
+## v0.5.9
 
+- Packaged for the [allsky-modules](https://github.com/AllskyTeam/allsky-modules)
+  repository, so Allsky 2025's Module Package Manager can install it. The package
+  manager puts the bundled files (`allsky_fisheye.py`, `stars.json`, `tools/`) into
+  `moduledata/data/allsky_meteordetect/` below the module; the module now looks there
+  first and, as before, beside itself.
+- Your own `calibration.json` stays beside the module (`~/allsky/config/myFiles/modules/`
+  on Allsky 2025): the package manager replaces the data folder on every update.
 - `tools/calibrate_fisheye.py`: the brightness a star must reach is now 12 times the
   image's own noise instead of a fixed value, and a fit is accepted by its error in
   degrees instead of pixels. A smooth, moonlit image from a Raspberry Pi HQ camera
