@@ -18,8 +18,10 @@
 - **New `calibration.json`** for this camera: centre (1950, 1066), a1 2010, a3 −267,
   rotation 18.2°, horizon radius 1743 px (the old one claimed 3413 px).
 - Effect, re-checked on the saved record: of 30 star-trail vetoes, 26 are still trailed
-  stars; the other 4 were real meteors the old calibration threw away. Of 97 saved
-  detections one would now be trail-vetoed: an edge-glow band, not a meteor.
+  stars. Of the other 4, two were satellites (their track continues through the frames
+  before and after, which the trail veto caught by luck) and two were real meteors the
+  old calibration threw away; those two were restored into the record by hand. Of 97
+  saved detections one would now be trail-vetoed: an edge-glow band, not a meteor.
 - `allsky_fisheye.pixel_to_altaz` no longer diverges in the frame corners beyond the lens
   circle (a3 is now negative).
 - **New `tools/align_overlay.py`: aligns the Allsky Website's constellation overlay** from
