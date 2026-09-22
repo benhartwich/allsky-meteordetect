@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `tools/calibrate_fisheye.py`: the brightness a star must reach is now 12 times the
+  image's own noise instead of a fixed value, and a fit is accepted by its error in
+  degrees instead of pixels. A smooth, moonlit image from a Raspberry Pi HQ camera
+  (4056 × 3040, lens circle larger than the sensor) failed both; it now fits 28 stars to
+  0.44°. This camera's dark-sky fit is unchanged.
 - `tools/calibrate_fisheye.py --list-stars`: lists the named bright stars above 20° at
   the frame's time with altitude and compass direction, to choose the two for `--star`.
 - `tools/align_overlay.py` no longer falls back to the repository's `calibration.json`

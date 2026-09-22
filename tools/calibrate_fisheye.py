@@ -226,6 +226,19 @@ def _haloMap(gray):
     return cv2.GaussianBlur(g, (0, 0), max(2.0, w / 960)) - cv2.GaussianBlur(g, (0, 0), max(8.0, w / 240))
 
 
+_NOISE = {}
+
+
+def _threshold(stars, sky):
+    """How bright a star must stand out: 12 times the star map's noise over the sky,
+    so it adapts to smooth moonlit images as well as grainy dark ones."""
+    key = id(stars)
+    if key not in _NOISE:
+        v = stars[sky][::7]
+        _NOISE[key] = max(3.0, 12.0 * 1.4826 * float(np.median(np.abs(v - np.median(v)))))
+    return _NOISE[key]
+
+
 def _brightPairs(frames, p, flip, radius, dominance=1.35):
     """(alt, az, x, y) for every bright catalogue star whose search window holds ONE clear
     winner: the brightest point there, at least `dominance` times the runner-up.
@@ -245,7 +258,7 @@ def _brightPairs(frames, p, flip, radius, dominance=1.35):
             win[~sky[y0:y1, x0:x1]] = -1e9
             j = np.unravel_index(np.argmax(win), win.shape)
             best = win[j]
-            if best < 25:
+            if best < _threshold(halo, sky):
                 continue
             yy, xx = np.ogrid[:win.shape[0], :win.shape[1]]
             win[(yy - j[0]) ** 2 + (xx - j[1]) ** 2 < 36] = -1e9
@@ -406,8 +419,8 @@ def main():
         p, pairs = _refine(frames, seed, flip, W, verbose=args.verbose)
         if p is None:
             continue
-        rms_px = _stats(pairs, p, flip)[0]
-        if rms_px < 8 and (best is None or len(pairs) > len(best[1])):
+        rms_deg = _stats(pairs, p, flip)[1]
+        if rms_deg < 0.75 and (best is None or len(pairs) > len(best[1])):   # degrees: lens scales vary
             best = (p, pairs, flip)
     if best is None:
         sys.exit("ERROR: no consistent solution - use clear frames, or identify two bright stars with --star")
