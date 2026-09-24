@@ -98,18 +98,32 @@ up in the saved meteor images.
 
 Trees, buildings and the lens vignette should be excluded, or wind-blown leaves
 produce endless false positives. `tools/build_mask.py` builds the mask
-automatically from your own daytime images:
+automatically from your own daytime images.
+
+> **The tools come with this repository, not with Allsky.** Clone it, and run them
+> with Allsky's Python, which has OpenCV and NumPy:
+>
+> ```bash
+> git clone https://github.com/benhartwich/allsky-meteordetect.git ~/allsky-meteordetect
+> cd ~/allsky-meteordetect
+> ```
+
+The mask is made from **daytime** images, which Allsky only keeps when the daytime
+**Save** setting is on (it's off by default). Turn it on for a few days first. Then
+name a few day folders under `~/allsky/images` that hold clear-ish daytime images
+between 10:00 and 15:00 (change with `--day-start` / `--day-end`):
 
 ```bash
-python3 tools/build_mask.py \
+~/allsky/venv/bin/python3 tools/build_mask.py \
     --images ~/allsky/images \
     --nights 20260703 20260704 20260705 \
     --out meteor_mask.png \
     --preview preview.jpg
 ```
 
-Copy `meteor_mask.png` into `~/allsky/config/overlay/images/` and select it as the
-module's **Detection Mask**.
+Check `preview.jpg` (green = sky that is analysed, red = ignored). Then copy
+`meteor_mask.png` into `~/allsky/config/overlay/images/` and select it as the
+module's **Detection Mask** in the Module Manager (night flow).
 
 **Method.** Obstructions are *persistently dark silhouettes*. For every pixel the
 tool measures, across many daytime frames, how often it is markedly darker than the
