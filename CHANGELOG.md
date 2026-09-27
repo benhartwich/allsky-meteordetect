@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.10
+
+- **Glare spike filter** (Sky Filters, on by default). A bright, compact saturated
+  light, such as the full Moon or a street light, becomes a star of lens and dome spikes.
+  As the Moon moves, the spikes turn, and the frame difference shows a new line next to
+  it, which could be saved as a meteor. A streak within `glare_radii` (5) radii of such
+  a light that points straight away from it, within `glare_tol` (6°), is now rejected
+  as `glare`.
+- Measured on a user's full-Moon frame (discussion #7): the spike streaks lay 2.8–3.1
+  Moon radii out and 0.7–2.8° off radial, and they are all rejected. On the author's
+  120 saved meteors it rejects two false detections (a Moon ray in haze, and a moonlit
+  overcast sky) and no real meteor.
+
 ## v0.5.9
 
 - Packaged for the [allsky-modules](https://github.com/AllskyTeam/allsky-modules)
