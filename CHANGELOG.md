@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **`tools/calibrate_fisheye.py` identifies the stars itself** (asked for in
+  discussion #7). It matches every pair of bright points in the frame against every
+  pair of bright catalogue stars, as the Constellation Overlay Helper does, and
+  accepts only a clear winner: at least 12 stars, better than 0.6°, and no different
+  solution within 70 % of its star count. It tries the frames in turn. With no clear
+  winner it writes nothing and lists the bright stars to give by hand with `--star`,
+  which, like `--seed`, works as before. The old blind search (experimental, often
+  no solution) is gone.
+- Point detection as in the helper: overlay text (several maxima close together)
+  and the frame edge are ignored, and the threshold follows the image's noise.
+- Tested on 21 night frames from 8 nights and one day frame of the author's camera:
+  10 identified automatically, including under a full Moon and thin cirrus, each
+  within 0.3° of the existing calibration over most of the sky; 11 overcast or 2 s
+  frames and the day frame refused; none wrong. On the two frames of the existing
+  calibration it gives the same result to 0.5 px, in about 45 s on a Raspberry Pi 4 (the old
+  blind search took 90 s and failed).
+
 ## v0.5.10
 
 - **Glare spike filter** (Sky Filters, on by default). A bright, compact saturated
